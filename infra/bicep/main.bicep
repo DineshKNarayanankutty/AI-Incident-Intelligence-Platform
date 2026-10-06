@@ -4,10 +4,8 @@ targetScope = 'resourceGroup'
 param location string = resourceGroup().location
 
 @description('Short globally unique suffix used in resource names.')
+@minLength(3)
 param namePrefix string = 'aiincident'
-
-@description('Foundry model deployment name to use after model quota/deployment is configured.')
-param modelDeploymentName string = 'gpt-5-mini'
 
 @description('Tags applied to resources.')
 param tags object = {
