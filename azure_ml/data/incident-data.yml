@@ -1,0 +1,6 @@
+$schema: https://azuremlschemas.azureedge.net/latest/data.schema.json
+type: uri_file
+name: incident-severity-data
+version: 1
+description: Synthetic incident dataset used by the incident severity training pipeline.
+path: ../../data/synthetic_incidents.csv

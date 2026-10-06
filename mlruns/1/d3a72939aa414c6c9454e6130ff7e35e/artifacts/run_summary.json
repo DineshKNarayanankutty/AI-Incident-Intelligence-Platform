@@ -1,0 +1,20 @@
+{
+  "artifacts": {
+    "drift_baseline": "outputs\\model\\drift_baseline.json",
+    "labels": "outputs\\model\\label_order.json",
+    "metrics": "outputs\\model\\metrics.json",
+    "model": "outputs\\model\\model.joblib"
+  },
+  "experiment_name": "incident-severity-local",
+  "metrics": {
+    "accuracy": 1.0,
+    "macro_f1": 1.0,
+    "weighted_f1": 1.0
+  },
+  "model_uri": "runs:/d3a72939aa414c6c9454e6130ff7e35e/model",
+  "registered_model_name": "incident-severity-tfidf-logreg",
+  "registered_model_version": 2,
+  "registration_error": null,
+  "run_id": "d3a72939aa414c6c9454e6130ff7e35e",
+  "tracking_uri": "sqlite:///outputs/mlflow/mlflow.db"
+}

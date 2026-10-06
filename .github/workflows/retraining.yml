@@ -1,0 +1,27 @@
+name: Drift Retraining
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  retraining:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Drift gate
+        run: |
+          python -m mlops.drift_check --reference outputs/model/drift_baseline.json             --data data/synthetic_incidents.csv
+      - name: Trigger Azure ML training
+        if: ${{ success() }}
+        run: |
+          az extension add --name ml --yes
+          az ml job create -f azure_ml/pipeline.yml             --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}"             --workspace-name "${{ vars.AZURE_ML_WORKSPACE }}"

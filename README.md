@@ -1,76 +1,83 @@
 # AI Incident Intelligence Platform
 
-Portfolio project for AI-300: Operationalizing Machine Learning and Generative AI Solutions.
+Portfolio project for **AI-300: Operationalizing Machine Learning and Generative AI Solutions**.
 
-This repository is intentionally phased. Phase 1 is local-only and does not deploy Azure resources.
+This repository now contains the complete code-ready path from the original Phase 1 local ML foundation through Azure ML, FastAPI, Microsoft Foundry, GenAIOps evaluation/observability, drift-triggered retraining, Bicep, CI/CD, tests, and documentation.
 
-## Phase 1: Local ML Foundation
+> **Safety boundary:** this repository is code-ready, not deployed. No Azure resource creation is performed by the default local commands or test suite. Azure deployment workflows are explicit/manual.
 
-Implemented in this phase:
+## Phase 1 preserved
 
-- Synthetic incident dataset generation
-- Incident data schema
+The original local implementation remains under `src/`:
+
+- deterministic synthetic incident generation
+- schema
 - TF-IDF + Logistic Regression severity classifier
-- Local MLflow tracking with model registration
-- Evaluation metrics with a majority-class baseline
-- Drift baseline artifact for later production monitoring
-- Basic unit and smoke tests
+- MLflow local tracking and registration
+- evaluation against majority baseline
+- drift baseline
 
-Not implemented yet:
+The new layers call the same feature construction/training code instead of creating a second model implementation.
 
-- Azure ML resources, pipelines, endpoint deployment, or Entra-protected inference
-- FastAPI API layer
-- Microsoft Foundry agent
-- Prompt V1 vs V2 GenAI evaluation
-- Application Insights / Azure Monitor tracing
-- GitHub Actions CI/CD
-- Bicep infrastructure
+## Repository map
 
-## Local Setup
+```text
+src/                       Phase 1 ML source of truth
+azure_ml/                  Azure ML assets, components, pipeline, endpoint
+app/                       FastAPI application and Azure client abstractions
+genai/                     Foundry prompts, evaluation, optimization, telemetry
+mlops/                     drift/retraining integration
+infra/bicep/               Azure resource infrastructure
+.github/workflows/         CI, infra, training, evaluation, deployment, retraining
+tests/                     unit/config/integration stubs
+docs/                      architecture, AI-300 mapping, runbook, demo
+```
 
-Create a virtual environment and install dependencies:
+## Local execution
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
-```
-
-Generate the Phase 1 dataset:
-
-```powershell
-.\.venv\Scripts\python.exe -m src.data.generate_synthetic_data --output data/synthetic_incidents.csv --rows 400 --seed 42
-```
-
-Run tests:
-
-```powershell
 .\.venv\Scripts\python.exe -m pytest
+python scripts/validate_project.py
+python -m src.training.train --register-model
+uvicorn app.main:app --reload
 ```
 
-Train locally with MLflow tracking and local model registration:
+Open `http://127.0.0.1:8000/docs`.
 
-```powershell
-.\.venv\Scripts\python.exe -m src.training.train --data data/synthetic_incidents.csv --output-dir outputs/model --mlflow-tracking-uri sqlite:///outputs/mlflow/mlflow.db --register-model
-```
+Local mode uses the Phase 1 `outputs/model/model.joblib` artifact and a deterministic local Foundry fallback. No Azure credentials are required.
 
-Training writes local artifacts to `outputs/model/`, including:
+## Azure execution
 
-- `model.joblib`
-- `metrics.json`
-- `label_order.json`
-- `drift_baseline.json`
-- `run_summary.json`
+The Azure paths use:
 
-The synthetic data intentionally overlaps operational signals across adjacent severities, so the model has useful signal without trivially perfect metrics. The drift baseline captures reference distributions for incident metadata, severity labels, model predictions, and numeric operational fields. In later phases, production payloads can be compared against this baseline to detect data and prediction drift.
+- Azure ML v2 YAML for data, environment, component, pipeline, model, and managed online endpoint.
+- Microsoft Entra authentication through `DefaultAzureCredential`.
+- Microsoft Foundry `AIProjectClient` and an agent-scoped OpenAI Responses client.
+- Application Insights/OpenTelemetry for cloud telemetry.
+- Bicep for shared infrastructure.
+- GitHub Actions OIDC rather than long-lived cloud credentials.
 
-## Dataset Schema
+Azure identifiers are environment variables/GitHub configuration, not source-code constants.
 
-Each incident record contains:
+## Recommended implementation order
 
-- Incident metadata: `incident_id`, `service`, `region`, `incident_type`
-- Text fields: `title`, `description`
-- Operational signals: `duration_minutes`, `affected_users`, `error_rate`, `latency_ms`
-- Boolean risk signals: `has_data_loss`, `is_security_related`
-- Target label: `severity`
+1. Run all local tests.
+2. Build/inspect Bicep.
+3. Provision infrastructure through an approved environment.
+4. Register AML assets.
+5. Run training pipeline.
+6. Register/promote model.
+7. Create managed endpoint.
+8. Create/configure Foundry agent.
+9. Run GenAIOps evaluation.
+10. Connect FastAPI to Azure backends.
+11. Enable Application Insights telemetry.
+12. Exercise drift/retraining workflow.
 
-Severity labels are `Low`, `Medium`, `High`, and `Critical`.
+## Current Azure SDK basis
+
+The repository targets current Azure ML v2 and Microsoft Foundry SDK patterns. Azure ML supports registered data/environment/model references and managed online endpoint YAML; Foundry's current Python SDK uses `AIProjectClient` and agent-scoped OpenAI Responses clients.
+
+See `docs/ai-300-mapping.md` for exam-domain mapping.

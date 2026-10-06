@@ -1,12 +1,15 @@
 .venv/
 __pycache__/
+*.py[cod]
 .pytest_cache/
-*.pyc
-
-# Local generated outputs
-outputs/
-mlruns/
-
-# Local environment files
+.coverage
+htmlcov/
 .env
-
+.env.*
+!.env.example
+outputs/evaluation/
+outputs/mlflow/
+*.log
+.DS_Store
+.vscode/
+.idea/

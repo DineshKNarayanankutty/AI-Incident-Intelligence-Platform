@@ -51,76 +51,7 @@ def validate_rows(rows: list[dict[str, str]]) -> None:
         raise ValueError(f"Dataset has invalid severity labels: {invalid_labels}")
 
 
-def incident_text(row: dict[str, str]) -> str:
-    duration_minutes = float(row["duration_minutes"])
-    affected_users = float(row["affected_users"])
-    error_rate = float(row["error_rate"])
-    latency_ms = float(row["latency_ms"])
-
-    return " ".join(
-        [
-            row["title"],
-            row["description"],
-            f"service_{row['service']}",
-            f"region_{row['region']}",
-            f"type_{row['incident_type']}",
-            f"impact_{row['customer_impact']}",
-            f"detected_{row['detected_by']}",
-            f"duration_{_duration_bucket(duration_minutes)}",
-            f"users_{_affected_users_bucket(affected_users)}",
-            f"error_rate_{_error_rate_bucket(error_rate)}",
-            f"latency_{_latency_bucket(latency_ms)}",
-            f"data_loss_{row['has_data_loss']}",
-            f"security_{row['is_security_related']}",
-        ]
-    )
-
-
-def _duration_bucket(value: float) -> str:
-    if value < 30:
-        return "short"
-    if value < 120:
-        return "moderate"
-    if value < 360:
-        return "long"
-    return "extended"
-
-
-def _affected_users_bucket(value: float) -> str:
-    if value < 100:
-        return "small"
-    if value < 1000:
-        return "localized"
-    if value < 5000:
-        return "many"
-    if value < 20000:
-        return "large"
-    return "massive"
-
-
-def _error_rate_bucket(value: float) -> str:
-    if value < 0.03:
-        return "low"
-    if value < 0.10:
-        return "elevated"
-    if value < 0.25:
-        return "high"
-    if value < 0.50:
-        return "major"
-    return "severe"
-
-
-def _latency_bucket(value: float) -> str:
-    if value < 300:
-        return "normal"
-    if value < 1000:
-        return "slow"
-    if value < 2500:
-        return "degraded"
-    if value < 6000:
-        return "bad"
-    return "extreme"
-
+from src.training.features import incident_text
 
 def write_json(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)

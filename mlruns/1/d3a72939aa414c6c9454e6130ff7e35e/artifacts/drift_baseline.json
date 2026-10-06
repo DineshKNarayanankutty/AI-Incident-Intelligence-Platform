@@ -1,0 +1,184 @@
+{
+  "categorical": {
+    "customer_impact": {
+      "broad": 0.18666666666666668,
+      "global": 0.1,
+      "internal": 0.23666666666666666,
+      "limited": 0.36666666666666664,
+      "none": 0.11
+    },
+    "incident_type": {
+      "availability": 0.15333333333333332,
+      "capacity": 0.16333333333333333,
+      "data_quality": 0.10666666666666667,
+      "dependency": 0.13333333333333333,
+      "deployment": 0.17333333333333334,
+      "latency": 0.19333333333333333,
+      "security": 0.07666666666666666
+    },
+    "prediction": {
+      "Critical": 0.15333333333333332,
+      "High": 0.26666666666666666,
+      "Low": 0.24,
+      "Medium": 0.34
+    },
+    "region": {
+      "centralus": 0.19,
+      "eastus": 0.15333333333333332,
+      "southeastasia": 0.18666666666666668,
+      "uksouth": 0.17,
+      "westeurope": 0.15666666666666668,
+      "westus": 0.14333333333333334
+    },
+    "service": {
+      "analytics": 0.10333333333333333,
+      "checkout": 0.13666666666666666,
+      "identity": 0.14666666666666667,
+      "notifications": 0.13666666666666666,
+      "orders": 0.13333333333333333,
+      "payments": 0.13,
+      "search": 0.11,
+      "support": 0.10333333333333333
+    },
+    "severity": {
+      "Critical": 0.15333333333333332,
+      "High": 0.26666666666666666,
+      "Low": 0.24,
+      "Medium": 0.34
+    }
+  },
+  "holdout_profile": {
+    "categorical": {
+      "customer_impact": {
+        "broad": 0.24,
+        "global": 0.08,
+        "internal": 0.19,
+        "limited": 0.38,
+        "none": 0.11
+      },
+      "incident_type": {
+        "availability": 0.13,
+        "capacity": 0.12,
+        "data_quality": 0.16,
+        "dependency": 0.18,
+        "deployment": 0.12,
+        "latency": 0.18,
+        "security": 0.11
+      },
+      "prediction": {
+        "Critical": 0.15,
+        "High": 0.27,
+        "Low": 0.24,
+        "Medium": 0.34
+      },
+      "region": {
+        "centralus": 0.16,
+        "eastus": 0.19,
+        "southeastasia": 0.2,
+        "uksouth": 0.14,
+        "westeurope": 0.15,
+        "westus": 0.16
+      },
+      "service": {
+        "analytics": 0.11,
+        "checkout": 0.17,
+        "identity": 0.13,
+        "notifications": 0.14,
+        "orders": 0.05,
+        "payments": 0.17,
+        "search": 0.11,
+        "support": 0.12
+      },
+      "severity": {
+        "Critical": 0.15,
+        "High": 0.27,
+        "Low": 0.24,
+        "Medium": 0.34
+      }
+    },
+    "numeric": {
+      "affected_users": {
+        "count": 100,
+        "max": 58006.0,
+        "mean": 6264.52,
+        "median": 798.0,
+        "min": 1.0,
+        "p90": 28402.0
+      },
+      "duration_minutes": {
+        "count": 100,
+        "max": 937.0,
+        "mean": 172.1,
+        "median": 94.5,
+        "min": 8.0,
+        "p90": 390.0
+      },
+      "error_rate": {
+        "count": 100,
+        "max": 0.9399,
+        "mean": 0.219203,
+        "median": 0.10615,
+        "min": 0.0003,
+        "p90": 0.6117
+      },
+      "latency_ms": {
+        "count": 100,
+        "max": 11941.0,
+        "mean": 2179.74,
+        "median": 962.0,
+        "min": 92.0,
+        "p90": 6988.0
+      },
+      "text_length": {
+        "count": 100,
+        "max": 252.0,
+        "mean": 231.09,
+        "median": 232.5,
+        "min": 205.0,
+        "p90": 243.0
+      }
+    }
+  },
+  "numeric": {
+    "affected_users": {
+      "count": 300,
+      "max": 58215.0,
+      "mean": 6062.916666666667,
+      "median": 726.0,
+      "min": 0.0,
+      "p90": 22370.0
+    },
+    "duration_minutes": {
+      "count": 300,
+      "max": 934.0,
+      "mean": 189.39,
+      "median": 108.5,
+      "min": 5.0,
+      "p90": 544.0
+    },
+    "error_rate": {
+      "count": 300,
+      "max": 0.9147,
+      "mean": 0.201174,
+      "median": 0.109,
+      "min": 0.0018,
+      "p90": 0.5398
+    },
+    "latency_ms": {
+      "count": 300,
+      "max": 11948.0,
+      "mean": 2104.766666666667,
+      "median": 992.0,
+      "min": 90.0,
+      "p90": 6922.0
+    },
+    "text_length": {
+      "count": 300,
+      "max": 258.0,
+      "mean": 230.3,
+      "median": 233.0,
+      "min": 196.0,
+      "p90": 244.0
+    }
+  }
+}

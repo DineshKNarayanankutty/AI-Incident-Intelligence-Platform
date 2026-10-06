@@ -1,0 +1,20 @@
+{
+  "artifacts": {
+    "drift_baseline": "C:\\Users\\jackj\\AppData\\Local\\Temp\\pytest-of-jackj\\pytest-2\\test_train_model_smoke0\\model\\drift_baseline.json",
+    "labels": "C:\\Users\\jackj\\AppData\\Local\\Temp\\pytest-of-jackj\\pytest-2\\test_train_model_smoke0\\model\\label_order.json",
+    "metrics": "C:\\Users\\jackj\\AppData\\Local\\Temp\\pytest-of-jackj\\pytest-2\\test_train_model_smoke0\\model\\metrics.json",
+    "model": "C:\\Users\\jackj\\AppData\\Local\\Temp\\pytest-of-jackj\\pytest-2\\test_train_model_smoke0\\model\\model.joblib"
+  },
+  "experiment_name": "pytest-incident-severity",
+  "metrics": {
+    "accuracy": 1.0,
+    "macro_f1": 1.0,
+    "weighted_f1": 1.0
+  },
+  "model_uri": "runs:/47803c70837942eaa19706615cf8dd9a/model",
+  "registered_model_name": "pytest-incident-severity-model",
+  "registered_model_version": 1,
+  "registration_error": null,
+  "run_id": "47803c70837942eaa19706615cf8dd9a",
+  "tracking_uri": "sqlite:///C:/Users/jackj/AppData/Local/Temp/pytest-of-jackj/pytest-2/test_train_model_smoke0/mlflow.db"
+}

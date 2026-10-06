@@ -1,0 +1,26 @@
+{
+  "artifacts": {
+    "drift_baseline": "outputs\\model\\drift_baseline.json",
+    "labels": "outputs\\model\\label_order.json",
+    "metrics": "outputs\\model\\metrics.json",
+    "model": "outputs\\model\\model.joblib"
+  },
+  "baseline_metrics": {
+    "accuracy": 0.33,
+    "macro_f1": 0.12406015037593984,
+    "majority_class": "Medium",
+    "weighted_f1": 0.1637593984962406
+  },
+  "experiment_name": "incident-severity-local",
+  "metrics": {
+    "accuracy": 0.74,
+    "macro_f1": 0.7428030303030304,
+    "weighted_f1": 0.7367525252525253
+  },
+  "model_uri": "runs:/e6ca8febb6cc409fa9ad5d6da5615bbd/model",
+  "registered_model_name": "incident-severity-tfidf-logreg",
+  "registered_model_version": 6,
+  "registration_error": null,
+  "run_id": "e6ca8febb6cc409fa9ad5d6da5615bbd",
+  "tracking_uri": "sqlite:///outputs/mlflow/mlflow.db"
+}

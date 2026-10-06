@@ -1,0 +1,18 @@
+$schema: https://azuremlschemas.azureedge.net/latest/pipelineJob.schema.json
+type: pipeline
+display_name: incident-severity-training-pipeline
+experiment_name: incident-severity
+settings:
+  default_compute: azureml:cpu-cluster
+  default_datastore: azureml:workspaceblobstore
+jobs:
+  train:
+    type: command
+    component: ./components/train.yml
+    inputs:
+      training_data:
+        type: uri_file
+        path: azureml:incident-severity-data:1
+    outputs:
+      model_output:
+        type: uri_folder

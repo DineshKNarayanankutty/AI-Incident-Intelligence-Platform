@@ -1,0 +1,6 @@
+$schema: https://azuremlschemas.azureedge.net/latest/model.schema.json
+name: incident-severity
+version: 1
+type: custom_model
+description: Phase 1 incident severity classifier artifact.
+path: ../../outputs/model/model.joblib

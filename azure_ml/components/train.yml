@@ -1,0 +1,18 @@
+$schema: https://azuremlschemas.azureedge.net/latest/commandComponent.schema.json
+name: train_incident_severity
+version: 1
+display_name: Train Incident Severity Classifier
+type: command
+description: Train the existing Phase 1 TF-IDF + Logistic Regression classifier.
+code: ../..
+command: >-
+  python -m src.training.train
+  --data ${{inputs.training_data}}
+  --output-dir ${{outputs.model_output}}
+inputs:
+  training_data:
+    type: uri_file
+outputs:
+  model_output:
+    type: uri_folder
+environment: azureml:incident-training-env:1

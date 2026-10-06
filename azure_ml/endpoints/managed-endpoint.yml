@@ -1,0 +1,4 @@
+$schema: https://azuremlschemas.azureedge.net/latest/managedOnlineEndpoint.schema.json
+name: incident-severity-endpoint
+description: Managed online endpoint for incident severity inference.
+auth_mode: aad_token

@@ -1,0 +1,20 @@
+{
+  "artifacts": {
+    "drift_baseline": "outputs\\model\\drift_baseline.json",
+    "labels": "outputs\\model\\label_order.json",
+    "metrics": "outputs\\model\\metrics.json",
+    "model": "outputs\\model\\model.joblib"
+  },
+  "experiment_name": "incident-severity-local",
+  "metrics": {
+    "accuracy": 1.0,
+    "macro_f1": 1.0,
+    "weighted_f1": 1.0
+  },
+  "model_uri": "runs:/0e7c9d19e7bd4f64b896e0d03cfc2c7a/model",
+  "registered_model_name": "incident-severity-tfidf-logreg",
+  "registered_model_version": null,
+  "registration_error": "MlflowException: Registered Model with name=incident-severity-tfidf-logreg not found",
+  "run_id": "0e7c9d19e7bd4f64b896e0d03cfc2c7a",
+  "tracking_uri": "sqlite:///outputs/mlflow/mlflow.db"
+}
