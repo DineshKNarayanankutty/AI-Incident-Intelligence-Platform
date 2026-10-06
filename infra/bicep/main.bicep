@@ -272,6 +272,24 @@ resource apiApp 'Microsoft.Web/sites@2024-11-01' = {
 }
 
 // -----------------------------------------------------------------------------
+// Azure ML workspace -> ACR AcrPull permission
+// Required so Azure ML can pull container images from the private ACR.
+// -----------------------------------------------------------------------------
+
+resource mlWorkspaceAcrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(acr.id, mlWorkspace.id, 'azureml-workspace-acrpull')
+  scope: acr
+  properties: {
+    principalId: mlWorkspace.identity.principalId
+    principalType: 'ServicePrincipal'
+    roleDefinitionId: subscriptionResourceId(
+      'Microsoft.Authorization/roleDefinitions',
+      '7f951dda-4ed3-4680-a7ca-43fe172d538d'
+    )
+  }
+}
+
+// -----------------------------------------------------------------------------
 // Azure ML endpoint invocation permission
 // -----------------------------------------------------------------------------
 
