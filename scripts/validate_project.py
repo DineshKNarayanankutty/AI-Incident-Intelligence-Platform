@@ -18,6 +18,7 @@ REQUIRED_FILES = [
     "azure_ml/endpoints/managed-deployment.yml",
     "infra/bicep/main.bicep",
     ".github/workflows/ci.yml",
+    ".github/workflows/api-deployment.yml",
 ]
 
 

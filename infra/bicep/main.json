@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.48.1.52935",
-      "templateHash": "10024735842897068260"
+      "templateHash": "14391142103772368454"
     }
   },
   "parameters": {
@@ -21,7 +21,14 @@
       "defaultValue": "aiincident",
       "minLength": 3,
       "metadata": {
-        "description": "Short globally unique suffix used in resource names."
+        "description": "Short prefix used in resource names. Storage, ACR, and App Service names must be globally available."
+      }
+    },
+    "apiPlanSku": {
+      "type": "string",
+      "defaultValue": "B1",
+      "metadata": {
+        "description": "App Service plan SKU for the FastAPI host."
       }
     },
     "tags": {
@@ -43,7 +50,9 @@
     "keyVaultName": "[format('{0}-kv', parameters('namePrefix'))]",
     "mlWorkspaceName": "[format('{0}-ml', parameters('namePrefix'))]",
     "foundryAccountName": "[format('{0}-ai', parameters('namePrefix'))]",
-    "foundryProjectName": "[format('{0}-project', parameters('namePrefix'))]"
+    "foundryProjectName": "[format('{0}-project', parameters('namePrefix'))]",
+    "apiPlanName": "[format('{0}-api-plan', parameters('namePrefix'))]",
+    "apiAppName": "[format('{0}-api', parameters('namePrefix'))]"
   },
   "resources": [
     {
@@ -181,6 +190,185 @@
       "dependsOn": [
         "[resourceId('Microsoft.CognitiveServices/accounts', variables('foundryAccountName'))]"
       ]
+    },
+    {
+      "type": "Microsoft.Web/serverfarms",
+      "apiVersion": "2024-11-01",
+      "name": "[variables('apiPlanName')]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]",
+      "kind": "linux",
+      "sku": {
+        "name": "[parameters('apiPlanSku')]",
+        "tier": "Basic",
+        "capacity": 1
+      },
+      "properties": {
+        "reserved": true
+      }
+    },
+    {
+      "type": "Microsoft.Web/sites",
+      "apiVersion": "2024-11-01",
+      "name": "[variables('apiAppName')]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]",
+      "kind": "app,linux",
+      "identity": {
+        "type": "SystemAssigned"
+      },
+      "properties": {
+        "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', variables('apiPlanName'))]",
+        "httpsOnly": true,
+        "siteConfig": {
+          "alwaysOn": true,
+          "linuxFxVersion": "PYTHON|3.11",
+          "appCommandLine": "python -m uvicorn app.main:app --host 0.0.0.0 --port 8000",
+          "minTlsVersion": "1.2",
+          "ftpsState": "Disabled",
+          "healthCheckPath": "/health",
+          "appSettings": [
+            {
+              "name": "APP_ENV",
+              "value": "azure"
+            },
+            {
+              "name": "INFERENCE_BACKEND",
+              "value": "azureml"
+            },
+            {
+              "name": "FOUNDRY_BACKEND",
+              "value": "azure"
+            },
+            {
+              "name": "AZURE_SUBSCRIPTION_ID",
+              "value": "[subscription().subscriptionId]"
+            },
+            {
+              "name": "AZURE_RESOURCE_GROUP",
+              "value": "[resourceGroup().name]"
+            },
+            {
+              "name": "AZURE_ML_WORKSPACE",
+              "value": "[variables('mlWorkspaceName')]"
+            },
+            {
+              "name": "AZURE_ML_ENDPOINT_NAME",
+              "value": "incident-severity-endpoint"
+            },
+            {
+              "name": "AZURE_ML_DEPLOYMENT_NAME",
+              "value": "blue"
+            },
+            {
+              "name": "AZURE_ML_MODEL_NAME",
+              "value": "incident-severity"
+            },
+            {
+              "name": "AZURE_ML_MODEL_VERSION",
+              "value": "1"
+            },
+            {
+              "name": "AZURE_ML_SCORING_URI",
+              "value": ""
+            },
+            {
+              "name": "AZURE_AI_PROJECT_ENDPOINT",
+              "value": "[format('https://{0}.services.ai.azure.com/api/projects/{1}', variables('foundryAccountName'), variables('foundryProjectName'))]"
+            },
+            {
+              "name": "FOUNDRY_AGENT_NAME",
+              "value": ""
+            },
+            {
+              "name": "FOUNDRY_AGENT_VERSION",
+              "value": ""
+            },
+            {
+              "name": "AZURE_AI_MODEL_DEPLOYMENT_NAME",
+              "value": ""
+            },
+            {
+              "name": "APPLICATIONINSIGHTS_CONNECTION_STRING",
+              "value": ""
+            },
+            {
+              "name": "OTEL_SERVICE_NAME",
+              "value": "ai-incident-intelligence-api"
+            },
+            {
+              "name": "SCM_DO_BUILD_DURING_DEPLOYMENT",
+              "value": "1"
+            },
+            {
+              "name": "ENABLE_ORYX_BUILD",
+              "value": "1"
+            },
+            {
+              "name": "WEBSITES_PORT",
+              "value": "8000"
+            }
+          ]
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/serverfarms', variables('apiPlanName'))]",
+        "[resourceId('Microsoft.CognitiveServices/accounts', variables('foundryAccountName'))]",
+        "[resourceId('Microsoft.CognitiveServices/accounts/projects', variables('foundryAccountName'), variables('foundryProjectName'))]",
+        "[resourceId('Microsoft.MachineLearningServices/workspaces', variables('mlWorkspaceName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Authorization/roleDefinitions",
+      "apiVersion": "2022-04-01",
+      "name": "[guid(subscription().id, 'aiincident-ml-endpoint-invoker')]",
+      "properties": {
+        "roleName": "AI Incident ML Endpoint Invoker",
+        "description": "Allows the AI Incident FastAPI managed identity to invoke Azure ML online endpoints for scoring.",
+        "type": "CustomRole",
+        "assignableScopes": [
+          "[subscription().id]"
+        ],
+        "permissions": [
+          {
+            "actions": [
+              "Microsoft.MachineLearningServices/workspaces/onlineEndpoints/score/action"
+            ],
+            "notActions": []
+          }
+        ]
+      }
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[resourceId('Microsoft.MachineLearningServices/workspaces', variables('mlWorkspaceName'))]",
+      "name": "[guid(resourceId('Microsoft.MachineLearningServices/workspaces', variables('mlWorkspaceName')), resourceId('Microsoft.Web/sites', variables('apiAppName')), 'aiincident-ml-endpoint-invoker')]",
+      "properties": {
+        "principalId": "[reference(resourceId('Microsoft.Web/sites', variables('apiAppName')), '2024-11-01', 'full').identity.principalId]",
+        "principalType": "ServicePrincipal",
+        "roleDefinitionId": "[resourceId('Microsoft.Authorization/roleDefinitions', guid(subscription().id, 'aiincident-ml-endpoint-invoker'))]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/sites', variables('apiAppName'))]",
+        "[resourceId('Microsoft.Authorization/roleDefinitions', guid(subscription().id, 'aiincident-ml-endpoint-invoker'))]",
+        "[resourceId('Microsoft.MachineLearningServices/workspaces', variables('mlWorkspaceName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[resourceId('Microsoft.CognitiveServices/accounts/projects', variables('foundryAccountName'), variables('foundryProjectName'))]",
+      "name": "[guid(resourceId('Microsoft.CognitiveServices/accounts/projects', variables('foundryAccountName'), variables('foundryProjectName')), resourceId('Microsoft.Web/sites', variables('apiAppName')), 'foundry-agent-consumer')]",
+      "properties": {
+        "principalId": "[reference(resourceId('Microsoft.Web/sites', variables('apiAppName')), '2024-11-01', 'full').identity.principalId]",
+        "principalType": "ServicePrincipal",
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'eed3b665-ab3a-47b6-8f48-c9382fb1dad6')]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/sites', variables('apiAppName'))]",
+        "[resourceId('Microsoft.CognitiveServices/accounts/projects', variables('foundryAccountName'), variables('foundryProjectName'))]"
+      ]
     }
   ],
   "outputs": {
@@ -199,6 +387,14 @@
     "acrName": {
       "type": "string",
       "value": "[variables('acrName')]"
+    },
+    "apiAppName": {
+      "type": "string",
+      "value": "[variables('apiAppName')]"
+    },
+    "apiHostname": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Web/sites', variables('apiAppName')), '2024-11-01').defaultHostName]"
     }
   }
 }

@@ -48,10 +48,12 @@ Authentication uses `DefaultAzureCredential`; use managed identity/OIDC in Azure
 
 1. CI tests and static validation.
 2. Infrastructure what-if.
-3. Azure ML training.
-4. Evaluation.
-5. Human approval.
-6. Model/endpoint deployment.
-7. Smoke test and monitoring.
+3. Infrastructure deployment.
+4. Azure ML training and model registration.
+5. Model/endpoint deployment (then sync scoring URI to App Service).
+6. Foundry agent/model setup.
+7. FastAPI deployment.
+8. Evaluation, drift, and monitoring.
+9. E2E smoke test.
 
 The repository does not automatically deploy anything from a push.

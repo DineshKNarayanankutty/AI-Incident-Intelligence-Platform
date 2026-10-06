@@ -31,3 +31,15 @@ jobs:
         run: |
           az ml online-endpoint create -f azure_ml/endpoints/managed-endpoint.yml             --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}"             --workspace-name "${{ vars.AZURE_ML_WORKSPACE }}"
           az ml online-deployment create -f azure_ml/endpoints/managed-deployment.yml             --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}"             --workspace-name "${{ vars.AZURE_ML_WORKSPACE }}"             --all-traffic
+
+      - name: Sync scoring URI to FastAPI
+        run: |
+          SCORING_URI=$(az ml online-endpoint show \
+            --name incident-severity-endpoint \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --workspace-name "${{ vars.AZURE_ML_WORKSPACE }}" \
+            --query scoring_uri -o tsv)
+          az webapp config appsettings set \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --name "${{ vars.AZURE_API_APP_NAME }}" \
+            --settings AZURE_ML_SCORING_URI="$SCORING_URI"

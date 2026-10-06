@@ -1,0 +1,50 @@
+name: FastAPI Deployment
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy-api:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Validate application before packaging
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          python -m pytest -q
+          python scripts/validate_project.py
+
+      - name: Configure Application Insights connection string
+        shell: bash
+        run: |
+          APPINSIGHTS_CS=$(az monitor app-insights component show \
+            --app "${{ vars.AZURE_APP_INSIGHTS_NAME }}" \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --query connectionString -o tsv)
+          az webapp config appsettings set \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --name "${{ vars.AZURE_API_APP_NAME }}" \
+            --settings APPLICATIONINSIGHTS_CONNECTION_STRING="$APPINSIGHTS_CS"
+
+      - name: Deploy FastAPI to App Service
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ vars.AZURE_API_APP_NAME }}
+          package: .

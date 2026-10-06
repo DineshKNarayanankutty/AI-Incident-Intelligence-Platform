@@ -30,6 +30,7 @@ class FoundryAgentClient:
         project = AIProjectClient(
             endpoint=self.settings.foundry_project_endpoint,
             credential=get_default_azure_credential(),
+            allow_preview=True,
         )
         openai = project.get_openai_client(agent_name=self.settings.foundry_agent_name)
         response = openai.responses.create(input=prompt)
