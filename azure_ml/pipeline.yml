@@ -3,7 +3,7 @@ type: pipeline
 display_name: incident-severity-training-pipeline
 experiment_name: incident-severity
 settings:
-  default_compute: azureml:cpu-cluster
+  default_compute: azureml:serverless
   default_datastore: azureml:workspaceblobstore
 jobs:
   train:
