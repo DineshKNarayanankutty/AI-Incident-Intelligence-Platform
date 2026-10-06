@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SyntheticIncident",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "incident_id",
+    "title",
+    "description",
+    "service",
+    "region",
+    "incident_type",
+    "customer_impact",
+    "detected_by",
+    "duration_minutes",
+    "affected_users",
+    "error_rate",
+    "latency_ms",
+    "has_data_loss",
+    "is_security_related",
+    "severity"
+  ],
+  "properties": {
+    "incident_id": {
+      "type": "string",
+      "pattern": "^INC-[0-9]{5}$"
+    },
+    "title": {
+      "type": "string",
+      "minLength": 8
+    },
+    "description": {
+      "type": "string",
+      "minLength": 20
+    },
+    "service": {
+      "type": "string",
+      "enum": ["checkout", "payments", "identity", "orders", "notifications", "search", "analytics", "support"]
+    },
+    "region": {
+      "type": "string",
+      "enum": ["eastus", "westus", "centralus", "westeurope", "uksouth", "southeastasia"]
+    },
+    "incident_type": {
+      "type": "string",
+      "enum": ["latency", "availability", "data_quality", "security", "dependency", "capacity", "deployment"]
+    },
+    "customer_impact": {
+      "type": "string",
+      "enum": ["none", "internal", "limited", "broad", "global"]
+    },
+    "detected_by": {
+      "type": "string",
+      "enum": ["synthetic_monitor", "customer_ticket", "on_call", "log_alert", "security_alert"]
+    },
+    "duration_minutes": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "affected_users": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "error_rate": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "latency_ms": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "has_data_loss": {
+      "type": "boolean"
+    },
+    "is_security_related": {
+      "type": "boolean"
+    },
+    "severity": {
+      "type": "string",
+      "enum": ["Low", "Medium", "High", "Critical"]
+    }
+  }
+}
+

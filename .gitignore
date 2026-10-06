@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+
+# Local generated outputs
+outputs/
+mlruns/
+
+# Local environment files
+.env
+
