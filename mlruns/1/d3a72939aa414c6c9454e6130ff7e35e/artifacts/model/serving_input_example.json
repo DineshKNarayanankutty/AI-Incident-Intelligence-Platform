@@ -1,6 +1,0 @@
-{
-  "inputs": [
-    "Medium notifications capacity incident in centralus deployment regression causing elevated warnings. Signals include autoscale lag, error_rate=0.0568, latency_ms=775, affected_users=501, customer_impact=internal, detected_by=synthetic_monitor. service_notifications region_centralus type_capacity impact_internal detected_synthetic_monitor duration_60 users_501 error_rate_0.0568 latency_775 data_loss_false security_false",
-    "Medium payments deployment incident in southeastasia deployment regression causing elevated warnings. Signals include release regression, error_rate=0.0995, latency_ms=1132, affected_users=559, customer_impact=internal, detected_by=synthetic_monitor. service_payments region_southeastasia type_deployment impact_internal detected_synthetic_monitor duration_133 users_559 error_rate_0.0995 latency_1132 data_loss_false security_false"
-  ]
-}

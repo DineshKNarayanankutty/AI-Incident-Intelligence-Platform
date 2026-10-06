@@ -1,6 +1,0 @@
-{
-  "inputs": [
-    "Medium payments deployment incident in eastus elevated latency and intermittent request failures. Signals include configuration drift, error_rate=0.0777, latency_ms=1089, affected_users=167, customer_impact=internal, detected_by=synthetic_monitor. service_payments region_eastus type_deployment impact_internal detected_synthetic_monitor duration_45 users_167 error_rate_0.0777 latency_1089 data_loss_false security_false",
-    "High analytics data_quality incident in uksouth customer-facing outage with sustained request failures. Signals include corrupt payload, error_rate=0.3705, latency_ms=2052, affected_users=1435, customer_impact=limited, detected_by=on_call. service_analytics region_uksouth type_data_quality impact_limited detected_on_call duration_150 users_1435 error_rate_0.3705 latency_2052 data_loss_true security_false"
-  ]
-}
