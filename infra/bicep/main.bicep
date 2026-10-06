@@ -3,12 +3,16 @@ targetScope = 'resourceGroup'
 @description('Azure region for the platform.')
 param location string = resourceGroup().location
 
-@description('Short prefix used in resource names. Storage, ACR, and App Service names must be globally available.')
+@description('Short prefix used in resource names.')
 @minLength(3)
 param namePrefix string = 'aiincident'
 
-@description('App Service plan SKU for the FastAPI host.')
-param apiPlanSku string = 'B1'
+@description('App Service plan SKU for the FastAPI host. F1 is used to avoid the current B1 quota limit.')
+@allowed([
+  'F1'
+  'B1'
+])
+param apiPlanSku string = 'F1'
 
 @description('Tags applied to resources.')
 param tags object = {
@@ -42,17 +46,6 @@ resource storage 'Microsoft.Storage/storageAccounts@2023-05-01' = {
   }
 }
 
-resource appInsights 'Microsoft.Insights/components@2020-02-02' = {
-  name: appInsightsName
-  location: location
-  tags: tags
-  kind: 'web'
-  properties: {
-    Application_Type: 'web'
-    WorkspaceResourceId: logAnalytics.id
-  }
-}
-
 resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2022-10-01' = {
   name: logAnalyticsName
   location: location
@@ -62,6 +55,17 @@ resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2022-10-01' = {
     sku: {
       name: 'PerGB2018'
     }
+  }
+}
+
+resource appInsights 'Microsoft.Insights/components@2020-02-02' = {
+  name: appInsightsName
+  location: location
+  tags: tags
+  kind: 'web'
+  properties: {
+    Application_Type: 'web'
+    WorkspaceResourceId: logAnalytics.id
   }
 }
 
@@ -81,7 +85,7 @@ resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
   }
 }
 
-resource acr 'Microsoft.ContainerRegistry/registries@2023-11-01' = {
+resource acr 'Microsoft.ContainerRegistry/registries@2025-04-01' = {
   name: acrName
   location: location
   tags: tags
@@ -144,7 +148,10 @@ resource foundryProject 'Microsoft.CognitiveServices/accounts/projects@2026-07-1
   }
 }
 
-// FastAPI host: Azure App Service for Linux with a system-assigned identity.
+// -----------------------------------------------------------------------------
+// FastAPI hosting
+// -----------------------------------------------------------------------------
+
 resource apiPlan 'Microsoft.Web/serverfarms@2024-11-01' = {
   name: apiPlanName
   location: location
@@ -152,7 +159,7 @@ resource apiPlan 'Microsoft.Web/serverfarms@2024-11-01' = {
   kind: 'linux'
   sku: {
     name: apiPlanSku
-    tier: 'Basic'
+    tier: apiPlanSku == 'F1' ? 'Free' : 'Basic'
     capacity: 1
   }
   properties: {
@@ -172,7 +179,7 @@ resource apiApp 'Microsoft.Web/sites@2024-11-01' = {
     serverFarmId: apiPlan.id
     httpsOnly: true
     siteConfig: {
-      alwaysOn: true
+      alwaysOn: apiPlanSku != 'F1'
       linuxFxVersion: 'PYTHON|3.11'
       appCommandLine: 'python -m uvicorn app.main:app --host 0.0.0.0 --port 8000'
       minTlsVersion: '1.2'
@@ -241,7 +248,7 @@ resource apiApp 'Microsoft.Web/sites@2024-11-01' = {
         }
         {
           name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
-          value: ''
+          value: appInsights.properties.ConnectionString
         }
         {
           name: 'OTEL_SERVICE_NAME'
@@ -264,15 +271,18 @@ resource apiApp 'Microsoft.Web/sites@2024-11-01' = {
   }
 }
 
-// Least-privilege custom role for the API to score an Azure ML managed endpoint.
+// -----------------------------------------------------------------------------
+// Azure ML endpoint invocation permission
+// -----------------------------------------------------------------------------
+
 resource mlEndpointInvokerRole 'Microsoft.Authorization/roleDefinitions@2022-04-01' = {
-  name: guid(subscription().id, 'aiincident-ml-endpoint-invoker')
+  name: guid(resourceGroup().id, 'aiincident-ml-endpoint-invoker')
   properties: {
     roleName: 'AI Incident ML Endpoint Invoker'
     description: 'Allows the AI Incident FastAPI managed identity to invoke Azure ML online endpoints for scoring.'
     type: 'CustomRole'
     assignableScopes: [
-      subscription().id
+      resourceGroup().id
     ]
     permissions: [
       {
@@ -280,6 +290,8 @@ resource mlEndpointInvokerRole 'Microsoft.Authorization/roleDefinitions@2022-04-
           'Microsoft.MachineLearningServices/workspaces/onlineEndpoints/score/action'
         ]
         notActions: []
+        dataActions: []
+        notDataActions: []
       }
     ]
   }
@@ -295,7 +307,10 @@ resource apiMlInvokerAssignment 'Microsoft.Authorization/roleAssignments@2022-04
   }
 }
 
-// Least-privilege Foundry role for invoking agent endpoints from FastAPI.
+// -----------------------------------------------------------------------------
+// Foundry Agent Consumer permission
+// -----------------------------------------------------------------------------
+
 resource apiFoundryAgentConsumerAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(foundryProject.id, apiApp.id, 'foundry-agent-consumer')
   scope: foundryProject
@@ -309,9 +324,16 @@ resource apiFoundryAgentConsumerAssignment 'Microsoft.Authorization/roleAssignme
   }
 }
 
+// -----------------------------------------------------------------------------
+// Outputs
+// -----------------------------------------------------------------------------
+
 output mlWorkspaceName string = mlWorkspace.name
+output foundryAccountName string = foundryAccount.name
+output foundryProjectName string = foundryProject.name
 output foundryProjectEndpoint string = 'https://${foundryAccount.name}.services.ai.azure.com/api/projects/${foundryProject.name}'
 output keyVaultName string = keyVault.name
 output acrName string = acr.name
 output apiAppName string = apiApp.name
 output apiHostname string = apiApp.properties.defaultHostName
+output apiPrincipalId string = apiApp.identity.principalId
