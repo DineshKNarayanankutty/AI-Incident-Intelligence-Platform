@@ -13,3 +13,5 @@ outputs/mlflow/
 .DS_Store
 .vscode/
 .idea/
+outputs/
+mlruns/
