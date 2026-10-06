@@ -15,4 +15,4 @@ inputs:
 outputs:
   model_output:
     type: uri_folder
-environment: azureml:incident-training-env:1
+environment: azureml:incident-training-env:2
