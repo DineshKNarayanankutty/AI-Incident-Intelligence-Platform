@@ -23,6 +23,8 @@ class Settings(BaseModel):
     azure_ml_deployment_name: str = "blue"
     azure_ml_model_name: str = "incident-severity"
     azure_ml_model_version: str = "1"
+    azure_ml_scoring_uri: str = ""
+    azure_ml_timeout_seconds: float = 30.0
 
     foundry_project_endpoint: str = ""
     foundry_agent_name: str = ""
@@ -49,6 +51,8 @@ class Settings(BaseModel):
             azure_ml_deployment_name=os.getenv("AZURE_ML_DEPLOYMENT_NAME", "blue"),
             azure_ml_model_name=os.getenv("AZURE_ML_MODEL_NAME", "incident-severity"),
             azure_ml_model_version=os.getenv("AZURE_ML_MODEL_VERSION", "1"),
+            azure_ml_scoring_uri=os.getenv("AZURE_ML_SCORING_URI", ""),
+            azure_ml_timeout_seconds=float(os.getenv("AZURE_ML_TIMEOUT_SECONDS", "30")),
             foundry_project_endpoint=os.getenv("AZURE_AI_PROJECT_ENDPOINT", ""),
             foundry_agent_name=os.getenv("FOUNDRY_AGENT_NAME", ""),
             foundry_agent_version=os.getenv("FOUNDRY_AGENT_VERSION", ""),

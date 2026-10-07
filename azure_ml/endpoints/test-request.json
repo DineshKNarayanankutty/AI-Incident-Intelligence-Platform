@@ -1,0 +1,22 @@
+{
+  "input_data": {
+    "data": [
+      {
+        "incident_id": "INC-TEST-001",
+        "title": "Orders availability incident",
+        "description": "Elevated latency and intermittent request failures.",
+        "service": "orders",
+        "region": "westus",
+        "incident_type": "availability",
+        "customer_impact": "broad",
+        "detected_by": "on_call",
+        "duration_minutes": 299,
+        "affected_users": 396,
+        "error_rate": 0.1735,
+        "latency_ms": 310,
+        "has_data_loss": false,
+        "is_security_related": false
+      }
+    ]
+  }
+}
