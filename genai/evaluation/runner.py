@@ -1,4 +1,4 @@
-"""Local-first GenAIOps evaluation runner; Azure Foundry execution can be plugged in."""
+"""Local-first GenAIOps evaluation runner with optional Foundry execution."""
 from __future__ import annotations
 
 import argparse
@@ -6,28 +6,47 @@ import json
 from pathlib import Path
 from typing import Callable
 
+from genai.evaluation.evaluators import evaluate_response
 from genai.prompts.loader import load_prompt
 
 
 def load_dataset(path: Path) -> list[dict]:
-    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    cases: list[dict] = []
+    for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        if not line.strip():
+            continue
+        try:
+            case = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"Invalid JSONL at {path}:{line_number}") from exc
+        if not {"id", "incident", "expected_severity", "criteria"}.issubset(case):
+            raise ValueError(f"Missing required fields at {path}:{line_number}")
+        cases.append(case)
+    if not cases:
+        raise ValueError(f"Evaluation dataset is empty: {path}")
+    return cases
 
 
-def heuristic_score(output: str, expected_severity: str, criteria: list[str]) -> dict[str, float]:
-    text = output.lower()
-    severity_hit = float(expected_severity.lower() in text)
-    forbidden_invention = any(term in text for term in ("confirmed root cause", "definitely caused by", "resolved successfully"))
-    criterion_hits = sum(
-        [
-            float("impact" in text or "customer" in text),
-            float("signal" in text or "error" in text or "latency" in text),
-            float(not forbidden_invention),
-        ]
+def build_prompt(prompt_version: str, case: dict) -> str:
+    return load_prompt(prompt_version).format(
+        severity=case["expected_severity"],
+        incident=json.dumps(case["incident"], indent=2),
+    )
+
+
+def aggregate_scores(results: list[dict]) -> dict[str, float]:
+    keys = (
+        "severity_alignment",
+        "grounding",
+        "relevance",
+        "completeness",
+        "actionability",
+        "criteria_coverage",
+        "overall",
     )
     return {
-        "severity_alignment": severity_hit,
-        "grounding": criterion_hits / 3.0,
-        "overall": (severity_hit + criterion_hits / 3.0) / 2.0,
+        key: round(sum(item["scores"][key] for item in results) / len(results), 4)
+        for key in keys
     }
 
 
@@ -38,67 +57,106 @@ def run_evaluation(
     output_path: Path,
 ) -> dict:
     cases = load_dataset(dataset_path)
-    results = []
+    results: list[dict] = []
+
     for case in cases:
-        incident = case["incident"]
-        prompt = load_prompt(prompt_version).format(
-            severity=case["expected_severity"],
-            incident=json.dumps(incident, indent=2),
-        )
+        prompt = build_prompt(prompt_version, case)
         output = responder(prompt)
-        scores = heuristic_score(output, case["expected_severity"], case["criteria"])
-        results.append({"id": case["id"], "output": output, "scores": scores})
-    averages = {
-        key: sum(item["scores"][key] for item in results) / len(results)
-        for key in ("severity_alignment", "grounding", "overall")
+        scores = evaluate_response(
+            output=output,
+            expected_severity=case["expected_severity"],
+            incident=case["incident"],
+            criteria=case.get("criteria", []),
+        )
+        results.append(
+            {
+                "id": case["id"],
+                "expected_severity": case["expected_severity"],
+                "output": output,
+                "scores": scores,
+            }
+        )
+
+    report = {
+        "prompt_version": prompt_version,
+        "dataset": str(dataset_path),
+        "case_count": len(results),
+        "averages": aggregate_scores(results),
+        "cases": results,
     }
-    report = {"prompt_version": prompt_version, "cases": results, "averages": averages}
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
     return report
 
 
 def compare_reports(v1: dict, v2: dict) -> dict:
+    v1_scores = v1["averages"]
+    v2_scores = v2["averages"]
+    delta = {key: round(v2_scores[key] - v1_scores[key], 4) for key in v1_scores}
+
+    # Safety/grounding regression blocks promotion even if the aggregate improves.
+    grounding_regression = delta["grounding"] < 0
+    winner = "v1" if grounding_regression or v2_scores["overall"] < v1_scores["overall"] else "v2"
+
     return {
-        "v1": v1["averages"],
-        "v2": v2["averages"],
-        "delta": {key: v2["averages"][key] - v1["averages"][key] for key in v1["averages"]},
-        "winner": "v2" if v2["averages"]["overall"] >= v1["averages"]["overall"] else "v1",
+        "v1": v1_scores,
+        "v2": v2_scores,
+        "delta_v2_minus_v1": delta,
+        "grounding_regression": grounding_regression,
+        "winner": winner,
     }
 
 
 def _local_responder(prompt: str) -> str:
-    """Credential-free responder used only for local evaluation plumbing."""
+    """Credential-free responder used to validate evaluation plumbing."""
     import re
+
     match = re.search(r"Predicted severity:\s*([A-Za-z]+)", prompt)
     severity = match.group(1) if match else "unknown"
     return (
         f"The predicted severity is {severity}. "
-        "Impact is based on the observed customer impact and operational signals. "
+        "Observed customer impact and operational signals support the assessment. "
         "The available signals should be validated before declaring root cause. "
         "Next actions are to inspect the affected service, dependency health, "
-        "error rate, latency, and recent changes."
+        "error rate, latency, recent changes, and monitoring data. "
+        "Uncertainty remains around the underlying root cause."
     )
 
 
-def _foundry_responder():
+def _foundry_responder() -> Callable[[str], str]:
     from app.clients.foundry import FoundryAgentClient
     from app.core.config import Settings
+
     client = FoundryAgentClient(Settings.from_env())
     return client.analyze
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(description="Run GenAIOps prompt evaluations.")
     parser.add_argument("--dataset", type=Path, default=Path("genai/evaluation/dataset.jsonl"))
-    parser.add_argument("--prompt", choices=["v1", "v2"], default="v2")
-    parser.add_argument("--output", type=Path, default=Path("outputs/evaluation/report.json"))
+    parser.add_argument("--prompt", choices=["v1", "v2", "both"], default="both")
+    parser.add_argument("--output-dir", type=Path, default=Path("outputs/evaluation"))
     parser.add_argument("--backend", choices=["local", "foundry"], default="local")
     args = parser.parse_args()
 
     responder = _local_responder if args.backend == "local" else _foundry_responder()
-    report = run_evaluation(args.dataset, args.prompt, responder, args.output)
-    print(json.dumps(report["averages"], indent=2))
+    versions = ["v1", "v2"] if args.prompt == "both" else [args.prompt]
+    reports: dict[str, dict] = {}
+
+    for version in versions:
+        reports[version] = run_evaluation(
+            dataset_path=args.dataset,
+            prompt_version=version,
+            responder=responder,
+            output_path=args.output_dir / f"{version}.json",
+        )
+        print(f"{version}: {json.dumps(reports[version]['averages'])}")
+
+    if len(versions) == 2:
+        comparison = compare_reports(reports["v1"], reports["v2"])
+        comparison_path = args.output_dir / "comparison.json"
+        comparison_path.write_text(json.dumps(comparison, indent=2), encoding="utf-8")
+        print(json.dumps(comparison, indent=2))
 
 
 if __name__ == "__main__":
