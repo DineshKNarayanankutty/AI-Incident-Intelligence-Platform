@@ -3,34 +3,21 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 from pathlib import Path
 from typing import Any
 
-
-# Azure ML executes this file from azure_ml/endpoints/.
-# Add the repository root so the sibling src/ package is importable.
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-
-if not (PROJECT_ROOT / "src").is_dir():
-    raise RuntimeError(
-        f"Expected project root containing src/: {PROJECT_ROOT}"
-    )
-
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
-
-
 import joblib
 import mlflow
+import mlflow.sklearn
 
-from src.training.features import incident_text
+from features import incident_text
 
 
 _model: Any = None
 
 
 def init() -> None:
+    """Load the registered model or a local Joblib fallback."""
     global _model
 
     model_dir = Path(os.environ.get("AZUREML_MODEL_DIR", "."))
@@ -55,7 +42,14 @@ def init() -> None:
     mlmodel_matches = list(model_dir.rglob("MLmodel"))
     if mlmodel_matches:
         mlflow_model_dir = mlmodel_matches[0].parent
-        _model = mlflow.pyfunc.load_model(str(mlflow_model_dir))
+
+        # The model was logged with mlflow.sklearn.log_model(), so prefer the
+        # sklearn loader to preserve predict_proba() for confidence scoring.
+        try:
+            _model = mlflow.sklearn.load_model(str(mlflow_model_dir))
+        except Exception:
+            # Keep a generic MLflow fallback for compatible future models.
+            _model = mlflow.pyfunc.load_model(str(mlflow_model_dir))
         return
 
     raise FileNotFoundError(
@@ -88,6 +82,7 @@ def _normalize(payload: dict | list) -> list[dict[str, Any]]:
 
 
 def run(raw_data: str | dict | list) -> str:
+    """Score one or more incident payloads and return JSON predictions."""
     if isinstance(raw_data, str):
         payload = json.loads(raw_data)
     else:
@@ -95,11 +90,7 @@ def run(raw_data: str | dict | list) -> str:
 
     rows = _normalize(payload)
 
-    features = [
-        incident_text({**row, "severity": "Low"})
-        for row in rows
-    ]
-
+    features = [incident_text(row) for row in rows]
     predictions = _model.predict(features)
 
     if hasattr(predictions, "tolist"):
