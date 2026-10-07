@@ -2,7 +2,7 @@ $schema: https://azuremlschemas.azureedge.net/latest/managedOnlineDeployment.sch
 name: blue
 endpoint_name: incident-severity-endpoint
 model: azureml:incident-severity:1
-environment: azureml:incident-serving-env:2
+environment: azureml:incident-serving-env:3
 code_configuration:
   code: ../..
   scoring_script: azure_ml/endpoints/score.py

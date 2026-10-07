@@ -1,6 +1,6 @@
 $schema: https://azuremlschemas.azureedge.net/latest/environment.schema.json
 name: incident-serving-env
-version: 2
+version: 3
 description: Runtime for the incident severity managed online endpoint.
 image: mcr.microsoft.com/azureml/openmpi4.1.0-ubuntu22.04:latest
 conda_file: conda-serving.yml
