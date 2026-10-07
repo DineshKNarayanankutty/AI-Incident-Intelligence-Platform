@@ -3,8 +3,23 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from pathlib import Path
 from typing import Any
+
+
+# Azure ML executes this file from azure_ml/endpoints/.
+# Add the repository root so the sibling src/ package is importable.
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+if not (PROJECT_ROOT / "src").is_dir():
+    raise RuntimeError(
+        f"Expected project root containing src/: {PROJECT_ROOT}"
+    )
+
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 
 import joblib
 import mlflow
