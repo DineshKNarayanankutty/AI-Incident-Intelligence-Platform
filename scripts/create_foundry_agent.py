@@ -18,7 +18,7 @@ def main() -> None:
         agent = project.agents.create_version(
             agent_name=agent_name,
             definition=PromptAgentDefinition(
-                model="gpt-5-mini",
+                model="incident-gpt",
                 instructions=(
                     "You are an incident operations copilot for an SRE/MLOps team. "
                     "Analyze only the incident information provided. "
