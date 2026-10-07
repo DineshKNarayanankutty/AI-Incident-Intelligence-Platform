@@ -4,7 +4,7 @@ endpoint_name: incident-severity-endpoint
 model: azureml:incident-severity:1
 environment: azureml:incident-serving-env:3
 code_configuration:
-  code: ../..
+  code: .
   scoring_script: score.py
 instance_type: Standard_D2ds_v5
 instance_count: 1
