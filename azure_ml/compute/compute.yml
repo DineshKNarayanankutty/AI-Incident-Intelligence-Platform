@@ -5,7 +5,7 @@ type: amlcompute
 
 description: CPU compute cluster for AI Incident Intelligence training.
 
-size: Standard_E4ds_v4
+size: Standard_D8ds_v5
 
 min_instances: 0
 max_instances: 1
