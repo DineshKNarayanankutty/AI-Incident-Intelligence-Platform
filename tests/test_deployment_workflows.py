@@ -30,8 +30,14 @@ def test_rollback_workflow_exists_and_smoke_tests_target() -> None:
     assert '--traffic "${ROLLBACK_TO}=100 ${CURRENT}=0"' in text
 
 
+def test_drift_demo_data_asset_uses_absolute_workspace_path() -> None:
+    text = read_workflow("retraining.yml")
+    assert 'path: "${GITHUB_WORKSPACE}/${DATA_PATH}"' in text
+    assert 'path: "${DATA_PATH}"' not in text
+
+
 def test_drift_demo_data_asset_yaml_preserves_schema_variable() -> None:
     text = read_workflow("retraining.yml")
     assert r"\$schema: https://azuremlschemas.azureedge.net/latest/data.schema.json" in text
     assert 'version: "${ASSET_VERSION}"' in text
-    assert 'path: "${DATA_PATH}"' in text
+    assert 'path: "${GITHUB_WORKSPACE}/${DATA_PATH}"' in text

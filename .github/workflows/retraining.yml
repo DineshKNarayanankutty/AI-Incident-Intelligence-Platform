@@ -88,7 +88,7 @@ jobs:
           type: uri_file
           name: incident-severity-drift-demo
           version: "${ASSET_VERSION}"
-          path: "${DATA_PATH}"
+          path: "${GITHUB_WORKSPACE}/${DATA_PATH}"
           description: "Controlled drift dataset generated for the retraining demonstration."
           EOF
           az extension add --name ml --yes
