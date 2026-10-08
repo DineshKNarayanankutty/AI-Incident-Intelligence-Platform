@@ -47,7 +47,7 @@ def generate_demo(source: Path, output: Path) -> None:
 
     print(f"Generated controlled drift dataset: {output}")
     print(f"Rows: {len(rows)}")
-    print("Shifted features: region, error_rate, latency_ms")
+    print("Shifted features: region, error_rate")
 
 
 def main() -> None:
