@@ -18,6 +18,9 @@ jobs:
       training_data:
         type: uri_file
         path: azureml:incident-severity-data:1
+      evaluation_data:
+        type: uri_file
+        path: azureml:incident-severity-data:1
 
     outputs:
       model_output:

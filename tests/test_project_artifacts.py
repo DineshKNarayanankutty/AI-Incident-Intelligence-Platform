@@ -46,3 +46,17 @@ def test_required_workflow_set_is_present() -> None:
         "training.yml",
         "rollback.yml",
     } <= workflows
+
+
+def test_training_compute_and_evaluation_protocol_are_pinned() -> None:
+    import yaml
+
+    compute = yaml.safe_load((ROOT / "azure_ml/compute/compute.yml").read_text(encoding="utf-8"))
+    assert compute["size"] == "Standard_D4ds_v5"
+
+    pipeline = yaml.safe_load((ROOT / "azure_ml/pipeline.yml").read_text(encoding="utf-8"))
+    inputs = pipeline["jobs"]["train"]["inputs"]
+    assert inputs["evaluation_data"]["path"] == "azureml:incident-severity-data:1"
+
+    component = yaml.safe_load((ROOT / "azure_ml/components/train.yml").read_text(encoding="utf-8"))
+    assert component["version"] == 2

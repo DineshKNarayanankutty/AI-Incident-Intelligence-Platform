@@ -1,8 +1,11 @@
-"""Generate a controlled incident-data shift for the retraining demonstration.
+"""Generate a controlled drift dataset without changing model semantics.
 
-The source dataset remains untouched. The generated CSV preserves the production
-schema and labels while intentionally shifting a small set of features so the
-PSI drift gate crosses the retraining threshold.
+The demo intentionally changes only the monitored ``text_length`` statistic by
+adding whitespace to incident descriptions. TF-IDF tokenization ignores the
+added whitespace, so the candidate model sees the same tokens/features while
+the drift detector still observes a material distribution shift.
+
+The committed production dataset is never modified.
 """
 from __future__ import annotations
 
@@ -11,8 +14,6 @@ import csv
 import sys
 from pathlib import Path
 
-# Make repository packages importable when this file is executed directly with
-# ``python scripts/generate_drift_demo.py`` in CI or a local shell.
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -32,12 +33,11 @@ def generate_demo(source: Path, output: Path) -> None:
     if not rows:
         raise ValueError("Source dataset is empty.")
 
-    # Controlled shift: keep labels and text intact, move operational
-    # characteristics into a materially different distribution.
+    # Add whitespace only. This changes the monitored text_length distribution
+    # but does not change TF-IDF tokens used by the production classifier.
     for index, row in enumerate(rows):
-        row["region"] = "centralus" if index % 5 else "eastus"
-        row["error_rate"] = f"{min(float(row['error_rate']) * 3.5 + 0.20, 0.99):.4f}"
-        row["latency_ms"] = str(int(float(row["latency_ms"]) * 2.5 + 500))
+        padding = 600 if index % 2 == 0 else 900
+        row["description"] = f"{row['description']}{' ' * padding}"
 
     output.parent.mkdir(parents=True, exist_ok=True)
     with output.open("w", newline="", encoding="utf-8") as handle:
@@ -47,7 +47,7 @@ def generate_demo(source: Path, output: Path) -> None:
 
     print(f"Generated controlled drift dataset: {output}")
     print(f"Rows: {len(rows)}")
-    print("Shifted features: region, error_rate")
+    print("Shifted monitoring statistic: text_length (whitespace only)")
 
 
 def main() -> None:

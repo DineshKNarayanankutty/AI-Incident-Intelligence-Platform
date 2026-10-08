@@ -159,8 +159,18 @@ jobs:
             --production-metrics data/reference/production_model_metrics.json \
             --output outputs/candidate/gate.json
 
-      - name: Determine next Azure ML model version
+      - name: Show candidate quality gate result
         if: steps.gate.outputs.drift == 'true'
+        shell: bash
+        run: |
+          if [ -f outputs/candidate/gate.json ]; then
+            cat outputs/candidate/gate.json
+          else
+            echo "Candidate gate output was not created."
+          fi
+
+      - name: Determine next Azure ML model version
+        if: steps.gate.outputs.drift == 'true' && steps.candidate_gate.outcome == 'success'
         id: version
         shell: bash
         run: |

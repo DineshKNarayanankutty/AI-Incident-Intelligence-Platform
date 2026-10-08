@@ -54,6 +54,21 @@ def main() -> None:
     schema = json.loads((ROOT / "data/schema/incident.schema.json").read_text(encoding="utf-8"))
     assert schema["required"]
 
+    compute = yaml.safe_load((ROOT / "azure_ml/compute/compute.yml").read_text(encoding="utf-8"))
+    if compute.get("size") != "Standard_D4ds_v5":
+        raise SystemExit(
+            f"Training compute must remain Standard_D4ds_v5; found {compute.get('size')!r}."
+        )
+
+    component = yaml.safe_load((ROOT / "azure_ml/components/train.yml").read_text(encoding="utf-8"))
+    if component.get("version") != 2:
+        raise SystemExit("Training component version must be 2 after the evaluation-protocol change.")
+
+    pipeline = yaml.safe_load((ROOT / "azure_ml/pipeline.yml").read_text(encoding="utf-8"))
+    train_inputs = pipeline.get("jobs", {}).get("train", {}).get("inputs", {})
+    if "evaluation_data" not in train_inputs:
+        raise SystemExit("Azure ML training pipeline must define evaluation_data.")
+
     baseline = json.loads((ROOT / "data/reference/drift_baseline.json").read_text(encoding="utf-8"))
     if baseline.get("profile_version") != 2:
         raise SystemExit("Drift baseline must use profile_version=2.")

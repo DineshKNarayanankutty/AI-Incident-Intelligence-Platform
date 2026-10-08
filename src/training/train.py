@@ -76,19 +76,38 @@ def train_model(
     register_model: bool = True,
     test_size: float = 0.25,
     random_state: int = 42,
+    evaluation_data_path: Path | None = None,
 ) -> dict[str, Any]:
     rows = load_rows(data_path)
     features = [incident_text(row) for row in rows]
     labels = [row["severity"] for row in rows]
 
-    x_train, x_test, y_train, y_test, rows_train, rows_test = train_test_split(
-        features,
-        labels,
-        rows,
-        test_size=test_size,
-        random_state=random_state,
-        stratify=labels,
-    )
+    # Candidate retraining can use all current/drifted data for fitting and a
+    # fixed clean reference dataset for evaluation. This makes the quality gate
+    # comparable with the committed production baseline instead of comparing
+    # metrics measured on two different holdout distributions.
+    if evaluation_data_path is not None:
+        evaluation_rows = load_rows(evaluation_data_path)
+        evaluation_features = [incident_text(row) for row in evaluation_rows]
+        evaluation_labels = [row["severity"] for row in evaluation_rows]
+        _, x_test, _, y_test, _, rows_test = train_test_split(
+            evaluation_features,
+            evaluation_labels,
+            evaluation_rows,
+            test_size=test_size,
+            random_state=random_state,
+            stratify=evaluation_labels,
+        )
+        x_train, y_train, rows_train = features, labels, rows
+    else:
+        x_train, x_test, y_train, y_test, rows_train, rows_test = train_test_split(
+            features,
+            labels,
+            rows,
+            test_size=test_size,
+            random_state=random_state,
+            stratify=labels,
+        )
 
     pipeline = Pipeline(
         steps=[
@@ -121,6 +140,8 @@ def train_model(
             "train_rows": len(x_train),
             "test_rows": len(x_test),
             "random_state": random_state,
+            "evaluation_mode": "fixed_reference" if evaluation_data_path is not None else "random_holdout",
+            "evaluation_data": str(evaluation_data_path) if evaluation_data_path is not None else str(data_path),
         }
 
         mlflow.log_params(params)
@@ -213,6 +234,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--register-model", action="store_true")
     parser.add_argument("--test-size", type=float, default=0.25)
     parser.add_argument("--random-state", type=int, default=42)
+    parser.add_argument(
+        "--evaluation-data",
+        type=Path,
+        default=None,
+        help="Optional fixed reference dataset used only for candidate evaluation.",
+    )
     return parser.parse_args()
 
 
@@ -227,6 +254,7 @@ def main() -> None:
         register_model=args.register_model,
         test_size=args.test_size,
         random_state=args.random_state,
+        evaluation_data_path=args.evaluation_data,
     )
     print(json.dumps(summary, indent=2, sort_keys=True))
 

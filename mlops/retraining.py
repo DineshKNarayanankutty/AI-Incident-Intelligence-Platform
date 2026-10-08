@@ -39,6 +39,7 @@ def retrain_if_needed(
     production_metrics_path: Path = Path("data/reference/production_model_metrics.json"),
     min_accuracy: float = 0.80,
     min_macro_f1: float = 0.80,
+    evaluation_data_path: Path | None = Path("data/synthetic_incidents.csv"),
 ) -> dict[str, Any]:
     reference = json.loads(reference_profile_path.read_text(encoding="utf-8"))
     rows = load_rows(data_path)
@@ -57,6 +58,7 @@ def retrain_if_needed(
         output_dir,
         mlflow_tracking_uri=tracking_uri,
         register_model=False,
+        evaluation_data_path=evaluation_data_path,
     )
     candidate_gate = evaluate_candidate_metrics(
         output_dir / "metrics.json",

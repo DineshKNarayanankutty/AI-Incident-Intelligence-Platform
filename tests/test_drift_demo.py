@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import csv
+
+import numpy as np
 from pathlib import Path
 
 from scripts.generate_drift_demo import generate_demo
@@ -37,11 +39,7 @@ def test_demo_generator_preserves_schema_and_creates_drift(tmp_path: Path) -> No
     result = compare_profiles(reference, current)
 
     assert result["drift_detected"] is True
-    assert "categorical.region" in result["drifted_features"]
-    assert any(
-        feature in result["drifted_features"]
-        for feature in {"numeric.error_rate", "numeric.latency_ms"}
-    )
+    assert "numeric.text_length" in result["drifted_features"]
 
 
 def test_demo_dataset_preserves_candidate_quality_gate(tmp_path: Path) -> None:
@@ -74,3 +72,11 @@ def test_demo_dataset_preserves_candidate_quality_gate(tmp_path: Path) -> None:
     }
     gate = evaluate_candidate(candidate, production)
     assert gate["passed"] is True
+
+    # The demo must not change model tokens; it only changes whitespace.
+    source_features = [incident_text(row) for row in load_incident_rows(source)]
+    demo_features = [incident_text(row) for row in rows]
+    vectorizer = TfidfVectorizer(ngram_range=(1, 2), min_df=2, max_features=5000)
+    source_matrix = vectorizer.fit_transform(source_features)
+    demo_matrix = vectorizer.transform(demo_features)
+    assert np.allclose(source_matrix.toarray(), demo_matrix.toarray())

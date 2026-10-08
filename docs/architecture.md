@@ -74,3 +74,8 @@ rollback            production
 ```
 
 Only the deployment workflow changes endpoint traffic. The retraining workflow never changes production traffic.
+
+
+### Candidate quality evaluation
+
+Candidate retraining fits on the current/drifted dataset but evaluates on the fixed reference holdout (`data/synthetic_incidents.csv`, stratified 25% holdout, random_state=42) so the quality gate compares like-for-like with production model v1. The controlled demo changes only whitespace and therefore shifts monitored `text_length` without changing TF-IDF tokens.

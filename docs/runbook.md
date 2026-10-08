@@ -98,3 +98,8 @@ A passing candidate model is registered but is never promoted automatically by t
 The blue/green strategy intentionally keeps the previous production deployment available at 0% traffic so rollback does not require rebuilding the previous model.
 
 Current Azure ML CLI guidance supports creating a second deployment with zero traffic, invoking it directly with `--deployment-name`, and updating endpoint traffic explicitly rather than using `--all-traffic` for production rollouts. See the Azure safe-rollout guidance for the underlying pattern.
+
+
+### Candidate quality evaluation
+
+Candidate retraining fits on the current/drifted dataset but evaluates on the fixed reference holdout (`data/synthetic_incidents.csv`, stratified 25% holdout, random_state=42) so the quality gate compares like-for-like with production model v1. The controlled demo changes only whitespace and therefore shifts monitored `text_length` without changing TF-IDF tokens.

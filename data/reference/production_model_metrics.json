@@ -1,6 +1,7 @@
 {
   "model_name": "incident-severity",
   "model_version": "1",
-  "accuracy": 0.80,
-  "macro_f1": 0.809
+  "accuracy": 0.8,
+  "macro_f1": 0.809,
+  "evaluation_protocol": "fixed reference dataset data/synthetic_incidents.csv; stratified 25% holdout; random_state=42"
 }
