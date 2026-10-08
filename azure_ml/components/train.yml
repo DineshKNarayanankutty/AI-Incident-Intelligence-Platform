@@ -3,6 +3,8 @@ name: train_incident_severity
 version: 2
 display_name: Train Incident Severity Classifier
 type: command
+# Never reuse a previous run's outputs: the gate must score THIS run's candidate.
+is_deterministic: false
 description: Train the existing Phase 1 TF-IDF + Logistic Regression classifier.
 code: ../..
 command: >-

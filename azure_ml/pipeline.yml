@@ -9,6 +9,14 @@ settings:
   default_compute: azureml:incident-cpu-cluster
   default_datastore: azureml:workspaceblobstore
 
+# Pipeline-level output. Without this, `az ml job download --output-name
+# model_output` and `azureml://jobs/<pipeline-job>/outputs/model_output` have
+# nothing to resolve on the pipeline job (the output would exist only on the
+# child `train` job). The child output is bound to it below.
+outputs:
+  model_output:
+    type: uri_folder
+
 jobs:
   train:
     type: command
@@ -24,5 +32,4 @@ jobs:
         path: ../data/reference/candidate_evaluation.csv
 
     outputs:
-      model_output:
-        type: uri_folder
+      model_output: ${{parent.outputs.model_output}}
