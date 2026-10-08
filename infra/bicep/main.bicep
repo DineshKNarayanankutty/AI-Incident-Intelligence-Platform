@@ -326,15 +326,15 @@ resource apiProductionBlobContributor 'Microsoft.Authorization/roleAssignments@2
   }
 }
 
-resource githubProductionBlobReader 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(githubActionsPrincipalObjectId)) {
-  name: guid(productionContainer.id, githubActionsPrincipalObjectId, 'production-blob-reader')
+resource githubProductionBlobContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(githubActionsPrincipalObjectId)) {
+  name: guid(productionContainer.id, githubActionsPrincipalObjectId, 'production-blob-contributor')
   scope: productionContainer
   properties: {
     principalId: githubActionsPrincipalObjectId
     principalType: 'ServicePrincipal'
     roleDefinitionId: subscriptionResourceId(
       'Microsoft.Authorization/roleDefinitions',
-      '2a2b9908-6ea1-4ae2-8e65-a410df84e7d1'
+      'ba92f5b4-2d11-453d-a403-e96b0029c9fe'
     )
   }
 }

@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.48.1.52935",
-      "templateHash": "15780312059378109068"
+      "templateHash": "10080934537330465408"
     }
   },
   "parameters": {
@@ -391,11 +391,11 @@
       "type": "Microsoft.Authorization/roleAssignments",
       "apiVersion": "2022-04-01",
       "scope": "[resourceId('Microsoft.Storage/storageAccounts/blobServices/containers', variables('storageName'), 'default', 'production')]",
-      "name": "[guid(resourceId('Microsoft.Storage/storageAccounts/blobServices/containers', variables('storageName'), 'default', 'production'), parameters('githubActionsPrincipalObjectId'), 'production-blob-reader')]",
+      "name": "[guid(resourceId('Microsoft.Storage/storageAccounts/blobServices/containers', variables('storageName'), 'default', 'production'), parameters('githubActionsPrincipalObjectId'), 'production-blob-contributor')]",
       "properties": {
         "principalId": "[parameters('githubActionsPrincipalObjectId')]",
         "principalType": "ServicePrincipal",
-        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '2a2b9908-6ea1-4ae2-8e65-a410df84e7d1')]"
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')]"
       },
       "dependsOn": [
         "[resourceId('Microsoft.Storage/storageAccounts/blobServices/containers', variables('storageName'), 'default', 'production')]"
