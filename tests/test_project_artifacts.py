@@ -45,6 +45,7 @@ def test_required_workflow_set_is_present() -> None:
         "retraining.yml",
         "training.yml",
         "rollback.yml",
+        "drift-monitoring.yml",
     } <= workflows
 
 

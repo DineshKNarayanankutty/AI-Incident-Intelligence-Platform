@@ -11,7 +11,6 @@ jobs:
   rollback:
     runs-on: ubuntu-latest
     environment: production
-
     steps:
       - uses: actions/checkout@v4
 
@@ -35,27 +34,13 @@ jobs:
             --query traffic -o json)
 
           CURRENT=$(python - <<'PY' "$TRAFFIC_JSON"
-          import json
-          import sys
-
+          import json, sys
           traffic = json.loads(sys.argv[1])
-
-          active = [
-              name
-              for name, value in traffic.items()
-              if int(value or 0) > 0
-          ]
-
+          active = [name for name, value in traffic.items() if int(value or 0) > 0]
           if len(active) != 1 or int(traffic[active[0]]) != 100:
-              raise SystemExit(
-                  f"Expected one deployment at 100% traffic: {traffic!r}"
-              )
-
+              raise SystemExit(f"Expected one deployment at 100% traffic: {traffic!r}")
           if active[0] not in {"blue", "green"}:
-              raise SystemExit(
-                  f"Unexpected active deployment: {active[0]}"
-              )
-
+              raise SystemExit(f"Unexpected active deployment: {active[0]}")
           print(active[0])
           PY
           )
@@ -69,9 +54,6 @@ jobs:
           echo "current=$CURRENT" >> "$GITHUB_OUTPUT"
           echo "rollback_to=$ROLLBACK_TO" >> "$GITHUB_OUTPUT"
 
-          echo "Current active deployment: $CURRENT"
-          echo "Rollback target: $ROLLBACK_TO"
-
       - name: Verify rollback deployment exists
         shell: bash
         env:
@@ -84,13 +66,6 @@ jobs:
             --workspace-name "${{ vars.AZURE_ML_WORKSPACE }}" \
             --query "{name:name,state:provisioning_state,model:model}"
 
-      - name: Refresh Azure OIDC login before rollback smoke test
-        uses: azure/login@v2
-        with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-
       - name: Smoke test rollback target directly
         shell: bash
         env:
@@ -102,13 +77,6 @@ jobs:
             --request-file azure_ml/endpoints/test-request.json \
             --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
             --workspace-name "${{ vars.AZURE_ML_WORKSPACE }}"
-
-      - name: Refresh Azure OIDC login before rollback
-        uses: azure/login@v2
-        with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Route traffic back to previous deployment
         shell: bash
@@ -132,7 +100,6 @@ jobs:
             --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
             --workspace-name "${{ vars.AZURE_ML_WORKSPACE }}" \
             --query scoring_uri -o tsv)
-
           az webapp config appsettings set \
             --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
             --name "${{ vars.AZURE_API_APP_NAME }}" \

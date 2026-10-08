@@ -36,6 +36,7 @@ REQUIRED_FILES = [
     ".github/workflows/infrastructure.yml",
     ".github/workflows/retraining.yml",
     ".github/workflows/training.yml",
+    ".github/workflows/drift-monitoring.yml",
 ]
 
 

@@ -1,0 +1,166 @@
+name: Production Drift Monitoring
+
+on:
+  schedule:
+    - cron: '17 2 * * *'
+  workflow_dispatch:
+    inputs:
+      data_path:
+        description: Path to the current production incident CSV to profile
+        required: false
+        default: data/synthetic_incidents.csv
+        type: string
+      auto_retrain:
+        description: Trigger Drift Retraining automatically when PSI reaches the drift threshold
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: production-drift-monitoring
+  cancel-in-progress: false
+
+jobs:
+  drift-monitoring:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Resolve monitoring configuration
+        id: config
+        shell: bash
+        env:
+          INPUT_DATA_PATH: ${{ inputs.data_path }}
+          INPUT_AUTO_RETRAIN: ${{ inputs.auto_retrain }}
+        run: |
+          set -euo pipefail
+
+          DATA_PATH="$INPUT_DATA_PATH"
+          if [ -z "$DATA_PATH" ]; then
+            DATA_PATH="data/synthetic_incidents.csv"
+          fi
+
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            AUTO_RETRAIN="true"
+          else
+            AUTO_RETRAIN="$INPUT_AUTO_RETRAIN"
+            if [ -z "$AUTO_RETRAIN" ]; then
+              AUTO_RETRAIN="true"
+            fi
+          fi
+
+          test -f "$DATA_PATH"
+          echo "data_path=$DATA_PATH" >> "$GITHUB_OUTPUT"
+          echo "auto_retrain=$AUTO_RETRAIN" >> "$GITHUB_OUTPUT"
+
+          echo "Monitoring dataset: $DATA_PATH"
+          echo "Automatic retraining on drift: $AUTO_RETRAIN"
+
+      - name: Run production drift check
+        shell: bash
+        env:
+          DATA_PATH: ${{ steps.config.outputs.data_path }}
+        run: |
+          set -euo pipefail
+          mkdir -p outputs/drift-monitoring
+          python -m mlops.drift_check \
+            --reference data/reference/drift_baseline.json \
+            --data "$DATA_PATH" \
+            --threshold 0.25 \
+            --warning-threshold 0.10 \
+            --output outputs/drift-monitoring/result.json
+
+      - name: Report drift result
+        id: result
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          python - <<'PY' > outputs/drift-monitoring/summary.txt
+          import json
+          from pathlib import Path
+
+          result = json.loads(
+              Path("outputs/drift-monitoring/result.json").read_text(encoding="utf-8")
+          )
+
+          print(f"drift_detected={result.get('drift_detected')}")
+          print(f"max_psi={result.get('max_psi')}")
+          print(f"max_psi_feature={result.get('max_psi_feature')}")
+          print(f"drifted_features={result.get('drifted_features', [])}")
+          print(f"warning_features={result.get('warning_features', [])}")
+          print(f"current_sample_size={result.get('current_sample_size')}")
+          PY
+
+          cat outputs/drift-monitoring/summary.txt
+
+          DRIFT=$(python - <<'PY'
+          import json
+          from pathlib import Path
+          result = json.loads(
+              Path("outputs/drift-monitoring/result.json").read_text(encoding="utf-8")
+          )
+          print("true" if result.get("drift_detected") else "false")
+          PY
+          )
+
+          echo "drift=$DRIFT" >> "$GITHUB_OUTPUT"
+
+      - name: Add drift result to workflow summary
+        shell: bash
+        run: |
+          {
+            echo "### Production drift monitoring"
+            cat outputs/drift-monitoring/summary.txt
+            echo "- Reference profile: data/reference/drift_baseline.json"
+            echo "- Alert/retraining threshold: PSI >= 0.25"
+            echo "- Warning threshold: PSI >= 0.10"
+            echo "- Monitoring dataset: ${{ steps.config.outputs.data_path }}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload drift monitoring artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-drift-report-${{ github.run_id }}
+          path: outputs/drift-monitoring/
+          if-no-files-found: error
+
+      - name: Trigger Drift Retraining
+        if: steps.result.outputs.drift == 'true' && steps.config.outputs.auto_retrain == 'true' && steps.config.outputs.data_path == 'data/synthetic_incidents.csv'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          DEFAULT_BRANCH="${{ github.event.repository.default_branch }}"
+          gh workflow run retraining.yml \
+            --ref "$DEFAULT_BRANCH" \
+            -f demo_drift=false
+          echo "Triggered Drift Retraining on $DEFAULT_BRANCH."
+
+      - name: Report manual retraining action for custom dataset
+        if: steps.result.outputs.drift == 'true' && steps.config.outputs.data_path != 'data/synthetic_incidents.csv'
+        shell: bash
+        run: |
+          {
+            echo "::warning::Drift detected in custom dataset '${{ steps.config.outputs.data_path }}'."
+            echo "::warning::Automatic retraining was not triggered because the current retraining workflow trains from data/synthetic_incidents.csv."
+            echo "::warning::Stage the approved production dataset into the repository path expected by Drift Retraining, then run Drift Retraining manually."
+          }
+
+      - name: Report no-drift result
+        if: steps.result.outputs.drift != 'true'
+        run: echo "No drift threshold exceeded; no retraining workflow was triggered."

@@ -54,7 +54,8 @@ Authentication uses `DefaultAzureCredential`; use managed identity/OIDC in Azure
 6. Foundry agent/model setup.
 7. FastAPI deployment (`FastAPI Deployment` workflow: tests, `scripts/package_api.py` clean runtime zip, App Service deployment, runtime configuration sync, smoke test).
 8. Evaluation, drift, and monitoring.
-9. E2E smoke test.
+9. Scheduled Production Drift Monitoring.
+10. E2E smoke test.
 
 Drift checks use `data/reference/drift_baseline.json`. Categorical and numeric feature distributions are compared with PSI using reference-defined numeric bins. PSI >= 0.10 is reported as a warning and PSI >= 0.25 is treated as drift. Retraining is only submitted when the configured drift threshold is exceeded.
 
@@ -111,3 +112,12 @@ Candidate retraining fits on the current/drifted dataset but evaluates on the fi
 - Retraining fits the candidate on the current/drifted `training_data` (rows that also appear in the evaluation set are removed) and evaluates it on `evaluation_data` as-is. Azure ML (`azure_ml/pipeline.yml`) and `mlops/retraining.py` use the same protocol. Workflows override only `training_data`.
 - Gate (`mlops/model_gate.py`): accuracy and macro_f1 >= 0.80, no regression versus production, and identical evaluation dataset fingerprint. `scripts/evaluate_candidate.py` prints candidate/production metrics, deltas and every check, and writes `outputs/candidate/gate.json`.
 - The demo drift (`scripts/generate_drift_demo.py`) only pads descriptions with whitespace, so `text_length` drifts while TF-IDF tokens, labels and model inputs are unchanged.
+
+
+## Scheduled production drift monitoring
+
+Run the `Production Drift Monitoring` GitHub Actions workflow daily or manually. The scheduled run checks `data/synthetic_incidents.csv` against `data/reference/drift_baseline.json`, uses PSI 0.10 as the warning threshold and 0.25 as the drift/retraining threshold, and uploads the complete report as an artifact.
+
+When drift is detected on the default approved production dataset path, the workflow dispatches `Drift Retraining` with `demo_drift=false`. The retraining workflow keeps the existing fixed evaluation protocol, quality gate, model registration, and manual blue-green promotion boundary unchanged.
+
+For a custom manual monitoring dataset, the workflow reports drift but does not auto-trigger retraining because the current retraining workflow is intentionally anchored to the approved repository production dataset path. Connect an ingestion process to stage the current production snapshot at that approved path before enabling unattended retraining from live data.

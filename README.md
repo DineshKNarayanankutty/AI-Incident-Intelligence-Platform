@@ -2,7 +2,7 @@
 
 Portfolio project for **AI-300: Operationalizing Machine Learning and Generative AI Solutions**.
 
-This repository contains the code-ready platform path from the original Phase 1 local ML foundation through Azure ML, FastAPI, Microsoft Foundry, GenAIOps evaluation/observability, PSI-based drift detection, Azure ML candidate retraining, candidate-vs-production quality gating, Bicep, CI/CD, tests, and documentation. Candidate promotion/rollback is intentionally a later lifecycle step.
+This repository contains the code-ready platform path from the original Phase 1 local ML foundation through Azure ML, FastAPI, Microsoft Foundry, GenAIOps evaluation/observability, PSI-based drift detection, scheduled drift monitoring, Azure ML candidate retraining, candidate-vs-production quality gating, blue-green deployment, rollback, Bicep, CI/CD, tests, and documentation.
 
 > **Safety boundary:** this repository is code-ready, not deployed. No Azure resource creation is performed by the default local commands or test suite. Azure deployment workflows are explicit/manual.
 
@@ -92,3 +92,8 @@ See `docs/ai-300-mapping.md` for exam-domain mapping.
 ### Model promotion and rollback
 
 Candidate models are registered only after the drift-triggered quality gate passes. Production traffic is changed separately through the `Azure ML Blue-Green Deployment` workflow. Candidate deployments receive 0% traffic during validation, then may be promoted to 100% after direct and live smoke tests. The `Azure ML Rollback` workflow restores the previous deployment without rebuilding it.
+### Scheduled production drift monitoring
+
+The `Production Drift Monitoring` workflow runs daily and can also be started manually. It evaluates the configured current incident CSV against `data/reference/drift_baseline.json`, publishes the full PSI report as an artifact, and records the drift result in the GitHub Actions summary. PSI >= 0.10 is a warning and PSI >= 0.25 is treated as drift. For the repository's default production dataset path (`data/synthetic_incidents.csv`), a detected drift automatically dispatches the existing `Drift Retraining` workflow; model promotion remains a separate manual blue-green approval step.
+
+For a future live data source, the monitoring dataset path is the integration point: the ingestion process should update or stage the current production incident snapshot before the scheduled check. Custom manual dataset paths are monitored but do not auto-trigger retraining because the current retraining workflow intentionally trains from the approved repository production dataset path.
