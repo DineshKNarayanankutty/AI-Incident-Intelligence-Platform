@@ -1,0 +1,6 @@
+{
+  "model_name": "incident-severity",
+  "model_version": "1",
+  "accuracy": 0.80,
+  "macro_f1": 0.809
+}

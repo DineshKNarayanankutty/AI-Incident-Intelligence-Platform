@@ -81,3 +81,7 @@ python -m mlops.drift_check `
 ```
 
 The result reports `drifted_features`, `warning_features`, `max_psi`, and per-feature categorical/numeric comparisons. Numeric PSI uses the reference profile's bins so the reference and current distributions are directly comparable.
+
+## Candidate retraining and quality gate
+
+When drift exceeds the configured threshold, the retraining workflow submits the Azure ML training pipeline, waits for completion, downloads the named model output, and evaluates `metrics.json` against `data/reference/production_model_metrics.json`. The candidate must meet the minimum accuracy/macro-F1 thresholds and must not regress from the production baseline. Only a passing candidate is registered as the next `incident-severity` model version; production traffic is not changed by this workflow.

@@ -44,3 +44,7 @@
 ### Drift detection
 
 The MLOps layer builds a committed known-good reference profile and compares current incident data with PSI. Categorical features are compared directly; numeric features are binned using edges learned from the reference profile. A PSI of 0.10 is a warning and 0.25 is the default drift/retraining threshold.
+
+### Candidate retraining gate
+
+Drift detection can trigger an Azure ML training job. The resulting candidate artifacts are evaluated against the committed production metrics baseline. A candidate must satisfy minimum quality and non-regression checks before Azure ML registration. Deployment and traffic promotion remain separate lifecycle steps so the production `incident-severity:1` model is not changed automatically.

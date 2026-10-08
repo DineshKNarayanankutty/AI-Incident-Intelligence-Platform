@@ -2,7 +2,7 @@
 
 Portfolio project for **AI-300: Operationalizing Machine Learning and Generative AI Solutions**.
 
-This repository contains the code-ready platform path from the original Phase 1 local ML foundation through Azure ML, FastAPI, Microsoft Foundry, GenAIOps evaluation/observability, PSI-based drift detection and drift-gated retraining scaffolding, Bicep, CI/CD, tests, and documentation. Final candidate-model promotion/rollback is intentionally a later lifecycle step.
+This repository contains the code-ready platform path from the original Phase 1 local ML foundation through Azure ML, FastAPI, Microsoft Foundry, GenAIOps evaluation/observability, PSI-based drift detection, Azure ML candidate retraining, candidate-vs-production quality gating, Bicep, CI/CD, tests, and documentation. Candidate promotion/rollback is intentionally a later lifecycle step.
 
 > **Safety boundary:** this repository is code-ready, not deployed. No Azure resource creation is performed by the default local commands or test suite. Azure deployment workflows are explicit/manual.
 
@@ -76,6 +76,7 @@ Azure identifiers are environment variables/GitHub configuration, not source-cod
 11. Enable Application Insights telemetry.
 12. Run the PSI-based drift check against the committed reference profile.
 13. Exercise the drift-gated retraining workflow.
+14. Review the candidate-vs-production quality gate result before model registration.
 
 The committed `data/reference/drift_baseline.json` is the stable reference profile for clean CI/retraining runs. Drift uses PSI across categorical distributions and binned numeric features; `0.10` is the warning threshold and `0.25` is the default retraining/alert threshold. Generated `outputs/` and `mlruns/` remain local/transient.
 
