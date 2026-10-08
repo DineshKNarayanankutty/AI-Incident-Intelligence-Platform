@@ -27,7 +27,11 @@ def test_reference_drift_baseline_is_present() -> None:
     )
     assert "categorical" in baseline
     assert "numeric" in baseline
-    assert "severity" in baseline["categorical"]
+    assert {"service", "region", "incident_type", "customer_impact", "detected_by"} <= set(baseline["categorical"])
+    assert baseline["profile_version"] == 2
+    for feature in ("duration_minutes", "affected_users", "error_rate", "latency_ms", "text_length"):
+        assert "bin_edges" in baseline["numeric"][feature]
+        assert "bin_distribution" in baseline["numeric"][feature]
 
 
 def test_required_workflow_set_is_present() -> None:

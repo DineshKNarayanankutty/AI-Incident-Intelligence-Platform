@@ -48,6 +48,15 @@ def main() -> None:
 
     schema = json.loads((ROOT / "data/schema/incident.schema.json").read_text(encoding="utf-8"))
     assert schema["required"]
+
+    baseline = json.loads((ROOT / "data/reference/drift_baseline.json").read_text(encoding="utf-8"))
+    if baseline.get("profile_version") != 2:
+        raise SystemExit("Drift baseline must use profile_version=2.")
+    for feature in ["duration_minutes", "affected_users", "error_rate", "latency_ms", "text_length"]:
+        numeric_profile = baseline.get("numeric", {}).get(feature, {})
+        if not numeric_profile.get("bin_edges") or not numeric_profile.get("bin_distribution"):
+            raise SystemExit(f"Drift baseline is missing numeric bins for {feature}.")
+
     print(f"Validated {len(REQUIRED_FILES)} required project artifacts; no Azure calls were made.")
 
 

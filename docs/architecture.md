@@ -39,3 +39,8 @@
 - Evaluation is treated as a release gate rather than an informal demo.
 - Application Insights/OpenTelemetry is an optional cloud sink; local execution requires no Azure telemetry.
 - No secret values are committed; GitHub Actions uses OIDC secrets and runtime environment variables.
+
+
+### Drift detection
+
+The MLOps layer builds a committed known-good reference profile and compares current incident data with PSI. Categorical features are compared directly; numeric features are binned using edges learned from the reference profile. A PSI of 0.10 is a warning and 0.25 is the default drift/retraining threshold.
