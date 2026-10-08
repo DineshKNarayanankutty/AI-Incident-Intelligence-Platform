@@ -75,10 +75,13 @@ Azure identifiers are environment variables/GitHub configuration, not source-cod
 10. Connect FastAPI to Azure backends.
 11. Enable Application Insights telemetry.
 12. Run the PSI-based drift check against the committed reference profile.
-13. Exercise the drift-gated retraining workflow.
-14. For a controlled end-to-end demo, run Drift Retraining with `demo_drift=true`; this generates a temporary dataset with whitespace-only text-length drift without changing the model tokens or committed production dataset.
-15. Candidate training uses the drifted data for fitting but evaluates against the same fixed reference holdout protocol used for production model v1.
-16. Review the candidate-vs-production quality gate result before model registration.
+13. Enable production incident event storage in Azure Blob Storage.
+14. Run the `Production Drift Monitoring` workflow and verify the current production snapshot.
+15. Exercise the drift-gated retraining workflow.
+16. For a controlled end-to-end demo, run Drift Retraining with `demo_drift=true`; this generates a temporary dataset with whitespace-only text-length drift without changing the model tokens or committed production dataset.
+17. Candidate training uses the drifted data for fitting but evaluates against the same fixed reference holdout protocol used for production model v1.
+18. Review the candidate-vs-production quality gate result before model registration.
+19. Validate the blue-green candidate rollout and rollback workflows.
 
 The committed `data/reference/drift_baseline.json` is the stable reference profile for clean CI/retraining runs. Drift uses PSI across categorical distributions and binned numeric features; `0.10` is the warning threshold and `0.25` is the default retraining/alert threshold. Generated `outputs/` and `mlruns/` remain local/transient.
 
@@ -94,6 +97,10 @@ See `docs/ai-300-mapping.md` for exam-domain mapping.
 Candidate models are registered only after the drift-triggered quality gate passes. Production traffic is changed separately through the `Azure ML Blue-Green Deployment` workflow. Candidate deployments receive 0% traffic during validation, then may be promoted to 100% after direct and live smoke tests. The `Azure ML Rollback` workflow restores the previous deployment without rebuilding it.
 ### Scheduled production drift monitoring
 
-The `Production Drift Monitoring` workflow runs daily and can also be started manually. It evaluates the configured current incident CSV against `data/reference/drift_baseline.json`, publishes the full PSI report as an artifact, and records the drift result in the GitHub Actions summary. PSI >= 0.10 is a warning and PSI >= 0.25 is treated as drift. For the repository's default production dataset path (`data/synthetic_incidents.csv`), a detected drift automatically dispatches the existing `Drift Retraining` workflow; model promotion remains a separate manual blue-green approval step.
+The `Production Drift Monitoring` workflow runs daily and can also be started manually. In Azure, the FastAPI application records prediction observations as append-only JSON events in the `production` blob container using its managed identity. The monitoring workflow authenticates with GitHub Actions OIDC, downloads the event stream, builds a current unique-incident CSV snapshot, and evaluates it against `data/reference/drift_baseline.json`. PSI >= 0.10 is a warning and PSI >= 0.25 is treated as drift.
 
-For a future live data source, the monitoring dataset path is the integration point: the ingestion process should update or stage the current production incident snapshot before the scheduled check. Custom manual dataset paths are monitored but do not auto-trigger retraining because the current retraining workflow intentionally trains from the approved repository production dataset path.
+When drift is detected, the current feature snapshot is published to `production/snapshots/current/incidents.csv`. Retraining is dispatched only when a separate ground-truth severity label is available for the training rows; model predictions are never reused as supervised labels. The labeled snapshot is published to `production/training/current/incidents.csv` and passed to the existing `Drift Retraining` workflow. The retraining workflow still uses the fixed clean evaluation set and the same strict quality gate. Model promotion remains a separate manual blue-green approval step.
+
+The GitHub Actions service principal needs `Storage Blob Data Reader` on the `production` container, while the FastAPI App Service managed identity needs `Storage Blob Data Contributor`. Bicep supports assigning both when `githubActionsPrincipalObjectId` is supplied; otherwise run `scripts/configure_production_storage_rbac.ps1` once with the existing `AZURE_RESOURCE_GROUP` and `AZURE_CLIENT_ID`. The built-in role IDs follow Microsoft Azure RBAC: Storage Blob Data Reader `2a2b9908-6ea1-4ae2-8e65-a410df84e7d1` and Storage Blob Data Contributor `ba92f5b4-2d11-453d-a403-e96b0029c9fe`.
+
+For a demo environment with no historical API traffic, use `python -m scripts.seed_production_events --source data/synthetic_incidents.csv --account-name <storage-account> --container production --overwrite` after the RBAC setup. This bootstraps labeled historical events in storage without changing the committed production dataset. New API observations remain prediction-only until an approved labeling process supplies ground truth.

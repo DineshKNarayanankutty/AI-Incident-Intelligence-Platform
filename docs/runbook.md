@@ -116,8 +116,25 @@ Candidate retraining fits on the current/drifted dataset but evaluates on the fi
 
 ## Scheduled production drift monitoring
 
-Run the `Production Drift Monitoring` GitHub Actions workflow daily or manually. The scheduled run checks `data/synthetic_incidents.csv` against `data/reference/drift_baseline.json`, uses PSI 0.10 as the warning threshold and 0.25 as the drift/retraining threshold, and uploads the complete report as an artifact.
+Run the `Production Drift Monitoring` GitHub Actions workflow daily or manually. The production API records prediction observations to the Azure Blob Storage `production` container using its managed identity. The workflow authenticates with GitHub Actions OIDC, downloads the append-only event stream, builds a current unique-incident drift snapshot, and runs the existing PSI comparison against `data/reference/drift_baseline.json`.
 
-When drift is detected on the default approved production dataset path, the workflow dispatches `Drift Retraining` with `demo_drift=false`. The retraining workflow keeps the existing fixed evaluation protocol, quality gate, model registration, and manual blue-green promotion boundary unchanged.
+The workflow writes the current feature snapshot to `production/snapshots/current/incidents.csv` when drift is detected. It only dispatches `Drift Retraining` when ground-truth severity labels are available; the labeled training snapshot is written to `production/training/current/incidents.csv`. Candidate training therefore uses approved supervised labels from current production observations, while evaluation remains fixed to `data/reference/candidate_evaluation.csv`. Model predictions are never used as training labels. Promotion is still a manual blue-green action.
 
-For a custom manual monitoring dataset, the workflow reports drift but does not auto-trigger retraining because the current retraining workflow is intentionally anchored to the approved repository production dataset path. Connect an ingestion process to stage the current production snapshot at that approved path before enabling unattended retraining from live data.
+### One-time storage RBAC
+
+The FastAPI managed identity receives `Storage Blob Data Contributor` on the `production` container from Bicep. The GitHub Actions OIDC service principal needs `Storage Blob Data Reader` on the same container so monitoring and retraining can download the snapshot. Azure documents these as data-plane RBAC roles; management-plane access alone is not sufficient for blob data access.
+
+Find the GitHub Actions service principal object ID with the signed-in operator account, then either supply it as the Bicep parameter `githubActionsPrincipalObjectId` during the approved infrastructure deployment or run `scripts/configure_production_storage_rbac.ps1` once to assign the reader role at the container scope.
+
+For an initial demo with no API history, bootstrap the labeled event stream:
+
+```powershell
+python -m scripts.seed_production_events `
+  --source data/synthetic_incidents.csv `
+  --account-name <storage-account-name> `
+  --container production `
+  --overwrite
+```
+
+After that, normal API traffic appends new production observations automatically. New observations are prediction-only until ground truth is added through an approved labeling process.
+

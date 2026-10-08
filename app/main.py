@@ -17,6 +17,7 @@ from app.api.schemas import (
 from app.clients.foundry import FoundryAgentClient
 from app.core.config import get_settings
 from app.services.inference import InferenceService
+from app.services.production_store import ProductionIncidentStore, safe_record
 from genai.monitoring.metrics import runtime_metrics
 from genai.prompts.loader import load_prompt
 from genai.tracing.telemetry import current_trace_id, get_tracer, record_exception
@@ -33,6 +34,7 @@ app = FastAPI(
 inference: InferenceService | None = None
 
 foundry = FoundryAgentClient(settings)
+production_store = ProductionIncidentStore(settings)
 tracer = get_tracer("ai-incident-intelligence.api")
 
 
@@ -73,6 +75,7 @@ def predict(request: IncidentRequest):
 
         try:
             result = get_inference_service().predict(request)
+            safe_record(production_store, request, result, current_trace_id())
 
             return result.model_copy(
                 update={"trace_id": current_trace_id()}
@@ -121,6 +124,7 @@ def analyze(
             )
 
             trace_id = current_trace_id()
+            safe_record(production_store, request.incident, prediction, trace_id)
 
             prediction = prediction.model_copy(
                 update={"trace_id": trace_id}

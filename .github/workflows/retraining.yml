@@ -8,6 +8,11 @@ on:
         required: true
         default: false
         type: boolean
+      training_data_blob:
+        description: Optional Blob Storage path for the current production incident snapshot
+        required: false
+        default: ''
+        type: string
 
 permissions:
   id-token: write
@@ -35,6 +40,39 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Refresh Azure OIDC login before production snapshot download
+        if: inputs.training_data_blob != '' && inputs.demo_drift == false
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Download production training snapshot
+        if: inputs.training_data_blob != '' && inputs.demo_drift == false
+        shell: bash
+        env:
+          BLOB_PATH: ${{ inputs.training_data_blob }}
+        run: |
+          set -euo pipefail
+          ACCOUNT=$(az storage account list \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --query "[?tags.project=='ai-incident-intelligence'].name | [0]" \
+            -o tsv)
+          test -n "$ACCOUNT"
+
+          mkdir -p outputs/production-training
+          az storage blob download \
+            --account-name "$ACCOUNT" \
+            --container-name production \
+            --name "$BLOB_PATH" \
+            --file outputs/production-training/incidents.csv \
+            --auth-mode login \
+            --overwrite true
+
+          test -s outputs/production-training/incidents.csv
+          echo "Production training snapshot downloaded: outputs/production-training/incidents.csv"
+
       - name: Select drift-check dataset
         id: dataset
         shell: bash
@@ -47,6 +85,9 @@ jobs:
               --output outputs/drift_demo/synthetic_incidents_drifted.csv
             echo "path=outputs/drift_demo/synthetic_incidents_drifted.csv" >> "$GITHUB_OUTPUT"
             echo "mode=controlled-demo" >> "$GITHUB_OUTPUT"
+          elif [ -n "${{ inputs.training_data_blob }}" ]; then
+            echo "path=outputs/production-training/incidents.csv" >> "$GITHUB_OUTPUT"
+            echo "mode=production-snapshot" >> "$GITHUB_OUTPUT"
           else
             echo "path=data/synthetic_incidents.csv" >> "$GITHUB_OUTPUT"
             echo "mode=production-reference" >> "$GITHUB_OUTPUT"
@@ -99,6 +140,14 @@ jobs:
             --resource-group "$RG" \
             --workspace-name "$WS"
 
+      - name: Refresh Azure OIDC login before Azure ML submission
+        if: steps.gate.outputs.drift == 'true'
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
       - name: Submit Azure ML candidate training
         if: steps.gate.outputs.drift == 'true'
         id: submit
@@ -115,6 +164,10 @@ jobs:
           if [ "$DEMO_DRIFT" = "true" ]; then
             TRAINING_DATA="azureml:incident-severity-drift-demo:${DATA_ASSET_VERSION}"
             echo "Using demo Azure ML data asset: $TRAINING_DATA"
+            SET_ARGS=(--set "jobs.train.inputs.training_data.path=$TRAINING_DATA")
+          elif [ -n "${{ inputs.training_data_blob }}" ]; then
+            TRAINING_DATA="${GITHUB_WORKSPACE}/outputs/production-training/incidents.csv"
+            echo "Using current production snapshot: $TRAINING_DATA"
             SET_ARGS=(--set "jobs.train.inputs.training_data.path=$TRAINING_DATA")
           fi
           JOB_NAME=$(az ml job create \

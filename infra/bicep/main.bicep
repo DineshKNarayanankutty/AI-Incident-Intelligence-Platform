@@ -16,6 +16,9 @@ param namePrefix string = 'aiincident'
 param apiPlanSku string = 'S1'
 
 @description('Tags applied to resources.')
+@description('Optional Microsoft Entra object ID for the GitHub Actions service principal. When supplied, grants read-only access to production incident blobs.')
+param githubActionsPrincipalObjectId string = ''
+
 param tags object = {
   project: 'ai-incident-intelligence'
   environment: 'dev'
@@ -44,6 +47,19 @@ resource storage 'Microsoft.Storage/storageAccounts@2023-05-01' = {
     minimumTlsVersion: 'TLS1_2'
     allowBlobPublicAccess: false
     supportsHttpsTrafficOnly: true
+  }
+}
+
+resource blobService 'Microsoft.Storage/storageAccounts/blobServices@2023-05-01' = {
+  parent: storage
+  name: 'default'
+}
+
+resource productionContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
+  parent: blobService
+  name: 'production'
+  properties: {
+    publicAccess: 'None'
   }
 }
 
@@ -248,6 +264,22 @@ resource apiApp 'Microsoft.Web/sites@2024-11-01' = {
           value: ''
         }
         {
+          name: 'AZURE_STORAGE_ACCOUNT_NAME'
+          value: storage.name
+        }
+        {
+          name: 'PRODUCTION_SNAPSHOT_CONTAINER'
+          value: 'production'
+        }
+        {
+          name: 'PRODUCTION_EVENTS_PREFIX'
+          value: 'events'
+        }
+        {
+          name: 'PRODUCTION_SNAPSHOT_ENABLED'
+          value: 'true'
+        }
+        {
           name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
           value: appInsights.properties.ConnectionString
         }
@@ -273,6 +305,37 @@ resource apiApp 'Microsoft.Web/sites@2024-11-01' = {
         }
       ]
     }
+  }
+}
+
+
+// -----------------------------------------------------------------------------
+// Production incident blob access
+// -----------------------------------------------------------------------------
+
+resource apiProductionBlobContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(productionContainer.id, apiApp.id, 'production-blob-contributor')
+  scope: productionContainer
+  properties: {
+    principalId: apiApp.identity.principalId
+    principalType: 'ServicePrincipal'
+    roleDefinitionId: subscriptionResourceId(
+      'Microsoft.Authorization/roleDefinitions',
+      'ba92f5b4-2d11-453d-a403-e96b0029c9fe'
+    )
+  }
+}
+
+resource githubProductionBlobReader 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(githubActionsPrincipalObjectId)) {
+  name: guid(productionContainer.id, githubActionsPrincipalObjectId, 'production-blob-reader')
+  scope: productionContainer
+  properties: {
+    principalId: githubActionsPrincipalObjectId
+    principalType: 'ServicePrincipal'
+    roleDefinitionId: subscriptionResourceId(
+      'Microsoft.Authorization/roleDefinitions',
+      '2a2b9908-6ea1-4ae2-8e65-a410df84e7d1'
+    )
   }
 }
 

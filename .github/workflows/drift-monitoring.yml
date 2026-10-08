@@ -5,20 +5,21 @@ on:
     - cron: '17 2 * * *'
   workflow_dispatch:
     inputs:
-      data_path:
-        description: Path to the current production incident CSV to profile
-        required: false
-        default: data/synthetic_incidents.csv
-        type: string
       auto_retrain:
-        description: Trigger Drift Retraining automatically when PSI reaches the drift threshold
+        description: Trigger Drift Retraining automatically when PSI reaches the drift threshold and labeled data is available
         required: false
         default: true
         type: boolean
+      max_rows:
+        description: Maximum latest unique production incidents to include in monitoring/training snapshots
+        required: false
+        default: '1000'
+        type: string
 
 permissions:
   contents: read
   actions: write
+  id-token: write
 
 concurrency:
   group: production-drift-monitoring
@@ -27,8 +28,15 @@ concurrency:
 jobs:
   drift-monitoring:
     runs-on: ubuntu-latest
+    environment: production
     steps:
       - uses: actions/checkout@v4
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - uses: actions/setup-python@v5
         with:
@@ -39,96 +47,193 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Refresh Azure OIDC login before production data access
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
       - name: Resolve monitoring configuration
         id: config
         shell: bash
         env:
-          INPUT_DATA_PATH: ${{ inputs.data_path }}
           INPUT_AUTO_RETRAIN: ${{ inputs.auto_retrain }}
+          INPUT_MAX_ROWS: ${{ inputs.max_rows }}
+          RG: ${{ vars.AZURE_RESOURCE_GROUP }}
         run: |
           set -euo pipefail
 
-          DATA_PATH="$INPUT_DATA_PATH"
-          if [ -z "$DATA_PATH" ]; then
-            DATA_PATH="data/synthetic_incidents.csv"
+          ACCOUNT=$(az storage account list \
+            --resource-group "$RG" \
+            --query "[?tags.project=='ai-incident-intelligence'].name | [0]" \
+            -o tsv)
+
+          if [ -z "$ACCOUNT" ]; then
+            echo "::error::Could not resolve the tagged production storage account in resource group $RG."
+            exit 1
           fi
 
-          if [ "${{ github.event_name }}" = "schedule" ]; then
+          MAX_ROWS="$INPUT_MAX_ROWS"
+          if [ -z "$MAX_ROWS" ]; then
+            MAX_ROWS="1000"
+          fi
+          [[ "$MAX_ROWS" =~ ^[1-9][0-9]*$ ]] || { echo "::error::max_rows must be a positive integer."; exit 1; }
+
+          AUTO_RETRAIN="$INPUT_AUTO_RETRAIN"
+          if [ "${{ github.event_name }}" = "schedule" ] || [ -z "$AUTO_RETRAIN" ]; then
             AUTO_RETRAIN="true"
-          else
-            AUTO_RETRAIN="$INPUT_AUTO_RETRAIN"
-            if [ -z "$AUTO_RETRAIN" ]; then
-              AUTO_RETRAIN="true"
-            fi
           fi
 
-          test -f "$DATA_PATH"
-          echo "data_path=$DATA_PATH" >> "$GITHUB_OUTPUT"
+          echo "storage_account=$ACCOUNT" >> "$GITHUB_OUTPUT"
+          echo "container=production" >> "$GITHUB_OUTPUT"
+          echo "events_prefix=events" >> "$GITHUB_OUTPUT"
+          echo "max_rows=$MAX_ROWS" >> "$GITHUB_OUTPUT"
           echo "auto_retrain=$AUTO_RETRAIN" >> "$GITHUB_OUTPUT"
 
-          echo "Monitoring dataset: $DATA_PATH"
-          echo "Automatic retraining on drift: $AUTO_RETRAIN"
+          echo "Production storage account: $ACCOUNT"
+          echo "Production event container: production"
+          echo "Production event prefix: events"
+          echo "Snapshot max rows: $MAX_ROWS"
+          echo "Automatic retraining on drift with labels: $AUTO_RETRAIN"
 
-      - name: Run production drift check
+      - name: Download production incident events
         shell: bash
         env:
-          DATA_PATH: ${{ steps.config.outputs.data_path }}
+          ACCOUNT: ${{ steps.config.outputs.storage_account }}
+          CONTAINER: ${{ steps.config.outputs.container }}
+          EVENTS_PREFIX: ${{ steps.config.outputs.events_prefix }}
+        run: |
+          set -euo pipefail
+          rm -rf outputs/production-events
+          mkdir -p outputs/production-events
+
+          az storage blob download-batch \
+            --account-name "$ACCOUNT" \
+            --source "$CONTAINER" \
+            --destination outputs/production-events \
+            --pattern "${EVENTS_PREFIX}/*.json" \
+            --auth-mode login \
+            --overwrite true
+
+      - name: Build current production snapshots
+        id: snapshot
+        shell: bash
+        env:
+          MAX_ROWS: ${{ steps.config.outputs.max_rows }}
         run: |
           set -euo pipefail
           mkdir -p outputs/drift-monitoring
-          python -m mlops.drift_check \
-            --reference data/reference/drift_baseline.json \
-            --data "$DATA_PATH" \
-            --threshold 0.25 \
-            --warning-threshold 0.10 \
-            --output outputs/drift-monitoring/result.json
+          python -m scripts.build_production_snapshot \
+            --events-dir outputs/production-events \
+            --output outputs/drift-monitoring/production/current/incidents.csv \
+            --training-output outputs/drift-monitoring/production/training/incidents.csv \
+            --max-rows "$MAX_ROWS" | tee outputs/drift-monitoring/snapshot-build.txt
 
-      - name: Report drift result
+          DRIFT_ROWS=$(python - <<'PY'
+          import re
+          from pathlib import Path
+          text = Path("outputs/drift-monitoring/snapshot-build.txt").read_text(encoding="utf-8")
+          m = re.search(r"Drift snapshot rows: (\d+)", text)
+          print(m.group(1) if m else "0")
+          PY
+          )
+          TRAINING_ROWS=$(python - <<'PY'
+          import re
+          from pathlib import Path
+          text = Path("outputs/drift-monitoring/snapshot-build.txt").read_text(encoding="utf-8")
+          m = re.search(r"Ground-truth labeled training rows: (\d+)", text)
+          print(m.group(1) if m else "0")
+          PY
+          )
+
+          test "$DRIFT_ROWS" -gt 0
+          echo "drift_rows=$DRIFT_ROWS" >> "$GITHUB_OUTPUT"
+          echo "training_rows=$TRAINING_ROWS" >> "$GITHUB_OUTPUT"
+
+      - name: Run production drift check
         id: result
         shell: bash
         run: |
           set -euo pipefail
+          python -m mlops.drift_check \
+            --reference data/reference/drift_baseline.json \
+            --data outputs/drift-monitoring/production/current/incidents.csv \
+            --threshold 0.25 \
+            --warning-threshold 0.10 \
+            --output outputs/drift-monitoring/result.json
 
           python - <<'PY' > outputs/drift-monitoring/summary.txt
           import json
           from pathlib import Path
-
-          result = json.loads(
-              Path("outputs/drift-monitoring/result.json").read_text(encoding="utf-8")
-          )
-
-          print(f"drift_detected={result.get('drift_detected')}")
-          print(f"max_psi={result.get('max_psi')}")
-          print(f"max_psi_feature={result.get('max_psi_feature')}")
-          print(f"drifted_features={result.get('drifted_features', [])}")
-          print(f"warning_features={result.get('warning_features', [])}")
-          print(f"current_sample_size={result.get('current_sample_size')}")
+          result = json.loads(Path("outputs/drift-monitoring/result.json").read_text(encoding="utf-8"))
+          for key in ("drift_detected", "max_psi", "max_psi_feature", "drifted_features", "warning_features", "current_sample_size"):
+              print(f"{key}={result.get(key)}")
           PY
 
           cat outputs/drift-monitoring/summary.txt
-
           DRIFT=$(python - <<'PY'
           import json
           from pathlib import Path
-          result = json.loads(
-              Path("outputs/drift-monitoring/result.json").read_text(encoding="utf-8")
-          )
+          result = json.loads(Path("outputs/drift-monitoring/result.json").read_text(encoding="utf-8"))
           print("true" if result.get("drift_detected") else "false")
           PY
           )
-
           echo "drift=$DRIFT" >> "$GITHUB_OUTPUT"
+
+      - name: Refresh Azure OIDC login before publishing snapshots
+        if: steps.result.outputs.drift == 'true'
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Publish current production drift snapshot
+        if: steps.result.outputs.drift == 'true'
+        shell: bash
+        env:
+          ACCOUNT: ${{ steps.config.outputs.storage_account }}
+          CONTAINER: ${{ steps.config.outputs.container }}
+        run: |
+          set -euo pipefail
+          az storage blob upload \
+            --account-name "$ACCOUNT" \
+            --container-name "$CONTAINER" \
+            --name "snapshots/current/incidents.csv" \
+            --file outputs/drift-monitoring/production/current/incidents.csv \
+            --auth-mode login \
+            --overwrite true
+
+      - name: Publish labeled training snapshot
+        if: steps.result.outputs.drift == 'true' && steps.snapshot.outputs.training_rows != '0'
+        shell: bash
+        env:
+          ACCOUNT: ${{ steps.config.outputs.storage_account }}
+          CONTAINER: ${{ steps.config.outputs.container }}
+        run: |
+          set -euo pipefail
+          az storage blob upload \
+            --account-name "$ACCOUNT" \
+            --container-name "$CONTAINER" \
+            --name "training/current/incidents.csv" \
+            --file outputs/drift-monitoring/production/training/incidents.csv \
+            --auth-mode login \
+            --overwrite true
 
       - name: Add drift result to workflow summary
         shell: bash
         run: |
           {
             echo "### Production drift monitoring"
+            echo "- Data source: Azure Blob Storage production event stream"
+            echo "- Drift snapshot: production/snapshots/current/incidents.csv"
+            echo "- Drift snapshot rows: ${{ steps.snapshot.outputs.drift_rows }}"
+            echo "- Ground-truth labeled training rows: ${{ steps.snapshot.outputs.training_rows }}"
+            echo "- Automatic retraining requires ground-truth labels; model predictions are never used as training labels."
             cat outputs/drift-monitoring/summary.txt
-            echo "- Reference profile: data/reference/drift_baseline.json"
-            echo "- Alert/retraining threshold: PSI >= 0.25"
             echo "- Warning threshold: PSI >= 0.10"
-            echo "- Monitoring dataset: ${{ steps.config.outputs.data_path }}"
+            echo "- Drift/retraining threshold: PSI >= 0.25"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload drift monitoring artifact
@@ -138,8 +243,8 @@ jobs:
           path: outputs/drift-monitoring/
           if-no-files-found: error
 
-      - name: Trigger Drift Retraining
-        if: steps.result.outputs.drift == 'true' && steps.config.outputs.auto_retrain == 'true' && steps.config.outputs.data_path == 'data/synthetic_incidents.csv'
+      - name: Trigger Drift Retraining with labeled production snapshot
+        if: steps.result.outputs.drift == 'true' && steps.config.outputs.auto_retrain == 'true' && steps.snapshot.outputs.training_rows != '0'
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
@@ -148,19 +253,15 @@ jobs:
           DEFAULT_BRANCH="${{ github.event.repository.default_branch }}"
           gh workflow run retraining.yml \
             --ref "$DEFAULT_BRANCH" \
-            -f demo_drift=false
-          echo "Triggered Drift Retraining on $DEFAULT_BRANCH."
+            -f demo_drift=false \
+            -f training_data_blob="production/training/current/incidents.csv"
+          echo "Triggered Drift Retraining with labeled production snapshot on $DEFAULT_BRANCH."
 
-      - name: Report manual retraining action for custom dataset
-        if: steps.result.outputs.drift == 'true' && steps.config.outputs.data_path != 'data/synthetic_incidents.csv'
-        shell: bash
+      - name: Report drift without enough labels
+        if: steps.result.outputs.drift == 'true' && steps.snapshot.outputs.training_rows == '0'
         run: |
-          {
-            echo "::warning::Drift detected in custom dataset '${{ steps.config.outputs.data_path }}'."
-            echo "::warning::Automatic retraining was not triggered because the current retraining workflow trains from data/synthetic_incidents.csv."
-            echo "::warning::Stage the approved production dataset into the repository path expected by Drift Retraining, then run Drift Retraining manually."
-          }
+          echo "::warning::Production drift was detected, but no ground-truth labels are available for supervised retraining. Retraining was not triggered."
 
       - name: Report no-drift result
         if: steps.result.outputs.drift != 'true'
-        run: echo "No drift threshold exceeded; no retraining workflow was triggered."
+        run: echo "No production drift threshold exceeded; no retraining workflow was triggered."

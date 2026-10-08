@@ -44,6 +44,11 @@ class Settings(BaseModel):
     azure_ml_scoring_uri: str = ""
     azure_ml_timeout_seconds: float = 30.0
 
+    production_snapshot_enabled: bool = False
+    azure_storage_account_name: str = ""
+    production_snapshot_container: str = "production"
+    production_events_prefix: str = "events"
+
     foundry_project_endpoint: str = ""
     foundry_agent_name: str = ""
     foundry_agent_version: str = ""
@@ -93,6 +98,10 @@ class Settings(BaseModel):
             azure_ml_model_version=_env("AZURE_ML_MODEL_VERSION", default="1"),
             azure_ml_scoring_uri=_clean_url(_env("AZURE_ML_SCORING_URI")),
             azure_ml_timeout_seconds=float(_env("AZURE_ML_TIMEOUT_SECONDS", default="30")),
+            production_snapshot_enabled=_env("PRODUCTION_SNAPSHOT_ENABLED", default="false").lower() == "true",
+            azure_storage_account_name=_env("AZURE_STORAGE_ACCOUNT_NAME"),
+            production_snapshot_container=_env("PRODUCTION_SNAPSHOT_CONTAINER", default="production"),
+            production_events_prefix=_env("PRODUCTION_EVENTS_PREFIX", default="events"),
             foundry_project_endpoint=foundry_endpoint,
             foundry_agent_name=foundry_agent_name,
             foundry_agent_version=_env("FOUNDRY_AGENT_VERSION"),

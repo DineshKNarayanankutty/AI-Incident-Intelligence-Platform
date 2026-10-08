@@ -30,7 +30,7 @@
               Scheduled drift monitor       Azure ML pipeline
                          │
                          ▼
-                   Retraining trigger
+                Retraining trigger
 ```
 
 ## Design choices
@@ -84,6 +84,27 @@ Only the deployment workflow changes endpoint traffic. The retraining workflow n
 Candidate retraining fits on the current/drifted dataset but evaluates on the fixed reference holdout (`data/synthetic_incidents.csv`, stratified 25% holdout, random_state=42) so the quality gate compares like-for-like with production model v1. The controlled demo changes only whitespace and therefore shifts monitored `text_length` without changing TF-IDF tokens.
 
 
-### Scheduled drift monitoring
+### Production data and scheduled drift monitoring
 
-The `Production Drift Monitoring` workflow runs daily or on demand against a current incident CSV and the committed drift baseline. It records PSI results as a workflow artifact and summary. When the default approved production dataset path exceeds PSI 0.25, it dispatches `Drift Retraining`. Candidate registration and blue-green production promotion remain separate gates.
+```text
+FastAPI production request
+        │
+        ▼
+ Azure Blob Storage
+  production/events
+        │
+        ▼
+Daily GitHub Actions monitor
+        │
+        ├── build drift snapshot
+        │
+        ├── PSI vs committed baseline
+        │
+        └── if drift
+              │
+              ├── publish snapshot
+              │
+              └── retrain only when ground-truth labels exist
+```
+
+Production API observations are append-only and contain the model prediction separately from any later ground-truth severity. This prevents pseudo-labeling during retraining. GitHub Actions uses Microsoft Entra/OIDC credentials for Blob data access.
