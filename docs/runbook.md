@@ -85,3 +85,16 @@ The result reports `drifted_features`, `warning_features`, `max_psi`, and per-fe
 ## Candidate retraining and quality gate
 
 When drift exceeds the configured threshold, the retraining workflow submits the Azure ML training pipeline, waits for completion, downloads the named model output, and evaluates `metrics.json` against `data/reference/production_model_metrics.json`. The candidate must meet the minimum accuracy/macro-F1 thresholds and must not regress from the production baseline. Only a passing candidate is registered as the next `incident-severity` model version; production traffic is not changed by this workflow.
+
+## Safe model deployment and promotion
+
+A passing candidate model is registered but is never promoted automatically by the retraining workflow. Use the `Azure ML Blue-Green Deployment` GitHub Actions workflow with the registered `model_version`.
+
+1. Run with `promote=false`. The workflow detects which of `blue` or `green` is currently serving 100% traffic, uses the inactive deployment as the candidate slot, deploys the requested model version with 0% traffic, and invokes that deployment directly.
+2. After the candidate passes validation, run the same workflow with `promote=true`. Traffic is switched to the candidate and the live endpoint is smoke-tested. If the live smoke test fails, traffic is automatically restored to the previous production deployment.
+3. FastAPI's Azure ML scoring URI is synchronized after promotion or rollback.
+4. Use the `Azure ML Rollback` workflow for a manual rollback. It smoke-tests the inactive deployment before routing 100% traffic back to it.
+
+The blue/green strategy intentionally keeps the previous production deployment available at 0% traffic so rollback does not require rebuilding the previous model.
+
+Current Azure ML CLI guidance supports creating a second deployment with zero traffic, invoking it directly with `--deployment-name`, and updating endpoint traffic explicitly rather than using `--all-traffic` for production rollouts. See the Azure safe-rollout guidance for the underlying pattern.

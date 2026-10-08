@@ -1,0 +1,116 @@
+name: Azure ML Rollback
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  rollback:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Install Azure ML CLI extension
+        run: az extension add --name ml --yes
+
+      - name: Determine current and rollback deployments
+        id: slots
+        shell: bash
+        run: |
+          TRAFFIC_JSON=$(az ml online-endpoint show \
+            --name "${{ vars.AZURE_ML_ENDPOINT_NAME || 'incident-severity-endpoint' }}" \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --workspace-name "${{ vars.AZURE_ML_WORKSPACE }}" \
+            --query traffic -o json)
+
+          CURRENT=$(python - <<'PY' "$TRAFFIC_JSON"
+          import json, sys
+          traffic = json.loads(sys.argv[1])
+          active = [name for name, value in traffic.items() if int(value or 0) > 0]
+          if len(active) != 1 or int(traffic[active[0]]) != 100:
+              raise SystemExit(f"Expected one deployment at 100% traffic: {traffic!r}")
+          if active[0] not in {"blue", "green"}:
+              raise SystemExit(f"Unexpected active deployment: {active[0]}")
+          print(active[0])
+          PY
+          )
+
+          if [ "$CURRENT" = "blue" ]; then
+            ROLLBACK_TO="green"
+          else
+            ROLLBACK_TO="blue"
+          fi
+
+          echo "current=$CURRENT" >> "$GITHUB_OUTPUT"
+          echo "rollback_to=$ROLLBACK_TO" >> "$GITHUB_OUTPUT"
+
+      - name: Verify rollback deployment exists
+        shell: bash
+        env:
+          ROLLBACK_TO: ${{ steps.slots.outputs.rollback_to }}
+        run: |
+          az ml online-deployment show \
+            --name "$ROLLBACK_TO" \
+            --endpoint-name "${{ vars.AZURE_ML_ENDPOINT_NAME || 'incident-severity-endpoint' }}" \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --workspace-name "${{ vars.AZURE_ML_WORKSPACE }}" \
+            --query "{name:name,state:provisioning_state,model:model}"
+
+      - name: Smoke test rollback target directly
+        shell: bash
+        env:
+          ROLLBACK_TO: ${{ steps.slots.outputs.rollback_to }}
+        run: |
+          az ml online-endpoint invoke \
+            --name "${{ vars.AZURE_ML_ENDPOINT_NAME || 'incident-severity-endpoint' }}" \
+            --deployment-name "$ROLLBACK_TO" \
+            --request-file azure_ml/endpoints/test-request.json \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --workspace-name "${{ vars.AZURE_ML_WORKSPACE }}"
+
+      - name: Route traffic back to previous deployment
+        shell: bash
+        env:
+          CURRENT: ${{ steps.slots.outputs.current }}
+          ROLLBACK_TO: ${{ steps.slots.outputs.rollback_to }}
+        run: |
+          az ml online-endpoint update \
+            --name "${{ vars.AZURE_ML_ENDPOINT_NAME || 'incident-severity-endpoint' }}" \
+            --traffic "${ROLLBACK_TO}=100 ${CURRENT}=0" \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --workspace-name "${{ vars.AZURE_ML_WORKSPACE }}"
+
+          echo "Rollback completed: ${ROLLBACK_TO} now receives 100% traffic."
+
+      - name: Sync scoring URI to FastAPI
+        shell: bash
+        run: |
+          SCORING_URI=$(az ml online-endpoint show \
+            --name "${{ vars.AZURE_ML_ENDPOINT_NAME || 'incident-severity-endpoint' }}" \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --workspace-name "${{ vars.AZURE_ML_WORKSPACE }}" \
+            --query scoring_uri -o tsv)
+          az webapp config appsettings set \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --name "${{ vars.AZURE_API_APP_NAME }}" \
+            --settings AZURE_ML_SCORING_URI="$SCORING_URI"
+
+      - name: Rollback summary
+        shell: bash
+        run: |
+          {
+            echo "### Azure ML rollback"
+            echo "- Previous active deployment: ${{ steps.slots.outputs.current }}"
+            echo "- Restored deployment: ${{ steps.slots.outputs.rollback_to }}"
+            echo "- Traffic: 100% restored deployment / 0% previous active"
+          } >> "$GITHUB_STEP_SUMMARY"

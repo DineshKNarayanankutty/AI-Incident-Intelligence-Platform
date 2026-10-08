@@ -1,44 +1,191 @@
-name: Azure ML Deployment
+name: Azure ML Blue-Green Deployment
 
 on:
   workflow_dispatch:
     inputs:
-      approve:
-        description: Type DEPLOY to allow endpoint deployment
+      model_version:
+        description: Registered incident-severity model version to deploy
         required: true
         type: string
+      promote:
+        description: Route 100% of endpoint traffic to the validated candidate
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   id-token: write
   contents: read
 
 jobs:
-  deploy:
-    if: ${{ inputs.approve == 'DEPLOY' }}
+  deploy-candidate:
     runs-on: ubuntu-latest
     environment: production
     steps:
       - uses: actions/checkout@v4
+
       - uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
       - name: Install Azure ML CLI extension
         run: az extension add --name ml --yes
-      - name: Create/update endpoint
+
+      - name: Validate requested model version
+        shell: bash
+        env:
+          MODEL_VERSION: ${{ inputs.model_version }}
         run: |
-          az ml online-endpoint create \
-            -f azure_ml/endpoints/managed-endpoint.yml \
-            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
-            --workspace-name "${{ vars.AZURE_ML_WORKSPACE }}"
-          az ml online-deployment create \
-            -f azure_ml/endpoints/managed-deployment.yml \
+          python - <<'PY'
+          import os
+          value = os.environ["MODEL_VERSION"]
+          if not value.isdigit() or int(value) < 1:
+              raise SystemExit(f"Invalid model_version: {value!r}")
+          PY
+
+          az ml model show \
+            --name incident-severity \
+            --version "$MODEL_VERSION" \
             --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
             --workspace-name "${{ vars.AZURE_ML_WORKSPACE }}" \
-            --all-traffic
+            -o json
+
+      - name: Inspect current blue-green traffic
+        id: slots
+        shell: bash
+        run: |
+          TRAFFIC_JSON=$(az ml online-endpoint show \
+            --name "${{ vars.AZURE_ML_ENDPOINT_NAME || 'incident-severity-endpoint' }}" \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --workspace-name "${{ vars.AZURE_ML_WORKSPACE }}" \
+            --query traffic -o json)
+
+          echo "Current endpoint traffic:"
+          echo "$TRAFFIC_JSON"
+
+          ACTIVE=$(python - <<'PY' "$TRAFFIC_JSON"
+          import json, sys
+          traffic = json.loads(sys.argv[1])
+          active = [name for name, value in traffic.items() if int(value or 0) > 0]
+          if len(active) != 1:
+              raise SystemExit(
+                  "Expected exactly one active blue/green deployment; "
+                  f"found traffic={traffic!r}"
+              )
+          if int(traffic[active[0]]) != 100:
+              raise SystemExit(
+                  "Expected the active deployment to receive 100% traffic; "
+                  f"found traffic={traffic!r}"
+              )
+          if active[0] not in {"blue", "green"}:
+              raise SystemExit(f"Unexpected active deployment: {active[0]}")
+          print(active[0])
+          PY
+          )
+
+          if [ "$ACTIVE" = "blue" ]; then
+            CANDIDATE="green"
+          else
+            CANDIDATE="blue"
+          fi
+
+          echo "active=$ACTIVE" >> "$GITHUB_OUTPUT"
+          echo "candidate=$CANDIDATE" >> "$GITHUB_OUTPUT"
+          echo "Active deployment: $ACTIVE"
+          echo "Candidate deployment: $CANDIDATE"
+
+      - name: Deploy candidate with zero traffic
+        shell: bash
+        env:
+          MODEL_VERSION: ${{ inputs.model_version }}
+          CANDIDATE: ${{ steps.slots.outputs.candidate }}
+        run: |
+          if az ml online-deployment show \
+            --name "$CANDIDATE" \
+            --endpoint-name "${{ vars.AZURE_ML_ENDPOINT_NAME || 'incident-severity-endpoint' }}" \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --workspace-name "${{ vars.AZURE_ML_WORKSPACE }}" \
+            >/dev/null 2>&1; then
+            az ml online-deployment update \
+              --name "$CANDIDATE" \
+              --endpoint-name "${{ vars.AZURE_ML_ENDPOINT_NAME || 'incident-severity-endpoint' }}" \
+              --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+              --workspace-name "${{ vars.AZURE_ML_WORKSPACE }}" \
+              -f azure_ml/endpoints/managed-deployment.yml \
+              --set model="azureml:incident-severity:${MODEL_VERSION}"
+          else
+            az ml online-deployment create \
+              --name "$CANDIDATE" \
+              --endpoint-name "${{ vars.AZURE_ML_ENDPOINT_NAME || 'incident-severity-endpoint' }}" \
+              --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+              --workspace-name "${{ vars.AZURE_ML_WORKSPACE }}" \
+              -f azure_ml/endpoints/managed-deployment.yml \
+              --set model="azureml:incident-severity:${MODEL_VERSION}"
+          fi
+
+      - name: Show candidate deployment
+        shell: bash
+        env:
+          CANDIDATE: ${{ steps.slots.outputs.candidate }}
+        run: |
+          az ml online-deployment show \
+            --name "$CANDIDATE" \
+            --endpoint-name "${{ vars.AZURE_ML_ENDPOINT_NAME || 'incident-severity-endpoint' }}" \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --workspace-name "${{ vars.AZURE_ML_WORKSPACE }}" \
+            --query "{name:name,state:provisioning_state,model:model,instance_count:instance_count}"
+
+      - name: Smoke test candidate directly
+        shell: bash
+        env:
+          CANDIDATE: ${{ steps.slots.outputs.candidate }}
+        run: |
+          az ml online-endpoint invoke \
+            --name "${{ vars.AZURE_ML_ENDPOINT_NAME || 'incident-severity-endpoint' }}" \
+            --deployment-name "$CANDIDATE" \
+            --request-file azure_ml/endpoints/test-request.json \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --workspace-name "${{ vars.AZURE_ML_WORKSPACE }}"
+
+      - name: Promote validated candidate and smoke test live traffic
+        if: ${{ inputs.promote }}
+        shell: bash
+        env:
+          ACTIVE: ${{ steps.slots.outputs.active }}
+          CANDIDATE: ${{ steps.slots.outputs.candidate }}
+        run: |
+          set +e
+
+          az ml online-endpoint update \
+            --name "${{ vars.AZURE_ML_ENDPOINT_NAME || 'incident-severity-endpoint' }}" \
+            --traffic "${CANDIDATE}=100 ${ACTIVE}=0" \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --workspace-name "${{ vars.AZURE_ML_WORKSPACE }}"
+
+          TEST_STATUS=0
+          az ml online-endpoint invoke \
+            --name "${{ vars.AZURE_ML_ENDPOINT_NAME || 'incident-severity-endpoint' }}" \
+            --request-file azure_ml/endpoints/test-request.json \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --workspace-name "${{ vars.AZURE_ML_WORKSPACE }}" || TEST_STATUS=$?
+
+          if [ "$TEST_STATUS" -ne 0 ]; then
+            echo "Live smoke test failed. Restoring previous production deployment: $ACTIVE"
+            az ml online-endpoint update \
+              --name "${{ vars.AZURE_ML_ENDPOINT_NAME || 'incident-severity-endpoint' }}" \
+              --traffic "${ACTIVE}=100 ${CANDIDATE}=0" \
+              --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+              --workspace-name "${{ vars.AZURE_ML_WORKSPACE }}"
+            exit 1
+          fi
+
+          echo "Promotion succeeded: $CANDIDATE now receives 100% traffic."
 
       - name: Sync scoring URI to FastAPI
+        if: ${{ inputs.promote }}
+        shell: bash
         run: |
           SCORING_URI=$(az ml online-endpoint show \
             --name "${{ vars.AZURE_ML_ENDPOINT_NAME || 'incident-severity-endpoint' }}" \
@@ -49,3 +196,19 @@ jobs:
             --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
             --name "${{ vars.AZURE_API_APP_NAME }}" \
             --settings AZURE_ML_SCORING_URI="$SCORING_URI"
+
+      - name: Deployment summary
+        shell: bash
+        env:
+          ACTIVE: ${{ steps.slots.outputs.active }}
+          CANDIDATE: ${{ steps.slots.outputs.candidate }}
+          MODEL_VERSION: ${{ inputs.model_version }}
+        run: |
+          {
+            echo "### Azure ML blue-green rollout"
+            echo "- Model version: ${MODEL_VERSION}"
+            echo "- Previous active deployment: ${ACTIVE}"
+            echo "- Candidate deployment: ${CANDIDATE}"
+            echo "- Promotion requested: ${{ inputs.promote }}"
+            echo "- Candidate traffic remains 0% when promotion is not requested."
+          } >> "$GITHUB_STEP_SUMMARY"

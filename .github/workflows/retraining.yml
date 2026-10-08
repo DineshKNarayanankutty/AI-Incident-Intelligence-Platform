@@ -124,6 +124,39 @@ jobs:
             --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
             --workspace-name "${{ vars.AZURE_ML_WORKSPACE }}"
 
+      - name: Write promotion manifest
+        if: steps.gate.outputs.drift == 'true' && steps.candidate_gate.outcome == 'success'
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          gate = json.loads(Path("outputs/candidate/gate.json").read_text(encoding="utf-8"))
+          manifest = {
+              "model_name": "incident-severity",
+              "model_version": int("${{ steps.version.outputs.version }}"),
+              "training_job_name": "${{ steps.submit.outputs.job_name }}",
+              "gate_passed": bool(gate["passed"]),
+              "candidate": gate["candidate"],
+              "production": gate["production"],
+              "next_workflow": "Azure ML Blue-Green Deployment",
+              "deployment_instruction": "Run the deployment workflow with this model_version; keep promote=false for candidate validation, then rerun with promote=true after validation.",
+          }
+          Path("outputs/candidate/promotion.json").write_text(
+              json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          print(json.dumps(manifest, indent=2, sort_keys=True))
+
+      - name: Upload candidate promotion artifact
+        if: steps.gate.outputs.drift == 'true' && steps.candidate_gate.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: incident-severity-candidate-${{ steps.version.outputs.version }}
+          path: outputs/candidate/promotion.json
+          if-no-files-found: error
+
       - name: Report no-drift result
         if: steps.gate.outputs.drift != 'true'
         run: echo "No drift threshold exceeded; no retraining job submitted."

@@ -48,3 +48,29 @@ The MLOps layer builds a committed known-good reference profile and compares cur
 ### Candidate retraining gate
 
 Drift detection can trigger an Azure ML training job. The resulting candidate artifacts are evaluated against the committed production metrics baseline. A candidate must satisfy minimum quality and non-regression checks before Azure ML registration. Deployment and traffic promotion remain separate lifecycle steps so the production `incident-severity:1` model is not changed automatically.
+
+## Model promotion path
+
+```text
+Drift detected
+      ↓
+Azure ML candidate training
+      ↓
+Candidate quality gate vs production
+      ↓
+Register incident-severity:<candidate-version>
+      ↓
+Blue/green candidate deployment (0% traffic)
+      ↓
+Direct candidate invocation
+      ↓
+Optional promotion
+      ↓
+100% candidate traffic
+      ↓
+Live smoke test
+   ↙ failure       ↘ success
+rollback            production
+```
+
+Only the deployment workflow changes endpoint traffic. The retraining workflow never changes production traffic.

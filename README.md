@@ -85,3 +85,8 @@ The committed `data/reference/drift_baseline.json` is the stable reference profi
 The repository targets current Azure ML v2 and Microsoft Foundry SDK patterns. Azure ML supports registered data/environment/model references and managed online endpoint YAML; Foundry's current Python SDK uses `AIProjectClient` and agent-scoped OpenAI Responses clients.
 
 See `docs/ai-300-mapping.md` for exam-domain mapping.
+
+
+### Model promotion and rollback
+
+Candidate models are registered only after the drift-triggered quality gate passes. Production traffic is changed separately through the `Azure ML Blue-Green Deployment` workflow. Candidate deployments receive 0% traffic during validation, then may be promoted to 100% after direct and live smoke tests. The `Azure ML Rollback` workflow restores the previous deployment without rebuilding it.
