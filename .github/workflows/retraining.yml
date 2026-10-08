@@ -84,7 +84,7 @@ jobs:
           WS: ${{ vars.AZURE_ML_WORKSPACE }}
         run: |
           cat > outputs/drift-demo-data.yml <<EOF
-          $schema: https://azuremlschemas.azureedge.net/latest/data.schema.json
+          \$schema: https://azuremlschemas.azureedge.net/latest/data.schema.json
           type: uri_file
           name: incident-severity-drift-demo
           version: "${ASSET_VERSION}"
