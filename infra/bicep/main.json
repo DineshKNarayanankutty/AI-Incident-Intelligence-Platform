@@ -26,13 +26,14 @@
     },
     "apiPlanSku": {
       "type": "string",
-      "defaultValue": "F1",
+      "defaultValue": "S1",
       "allowedValues": [
         "F1",
-        "B1"
+        "B1",
+        "S1"
       ],
       "metadata": {
-        "description": "App Service plan SKU for the FastAPI host. F1 is used to avoid the current B1 quota limit."
+        "description": "App Service plan SKU for the FastAPI host. S1 Standard is the stable development/demo default."
       }
     },
     "tags": {
@@ -204,7 +205,7 @@
       "kind": "linux",
       "sku": {
         "name": "[parameters('apiPlanSku')]",
-        "tier": "[if(equals(parameters('apiPlanSku'), 'F1'), 'Free', 'Basic')]",
+        "tier": "[if(equals(parameters('apiPlanSku'), 'F1'), 'Free', if(equals(parameters('apiPlanSku'), 'B1'), 'Basic', 'Standard'))]",
         "capacity": 1
       },
       "properties": {
@@ -299,6 +300,10 @@
             {
               "name": "OTEL_SERVICE_NAME",
               "value": "ai-incident-intelligence-api"
+            },
+            {
+              "name": "APPLICATIONINSIGHTS_METRIC_NAMESPACE_OPT_IN",
+              "value": "true"
             },
             {
               "name": "SCM_DO_BUILD_DURING_DEPLOYMENT",

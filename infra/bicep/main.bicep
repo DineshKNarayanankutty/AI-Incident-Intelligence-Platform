@@ -7,12 +7,13 @@ param location string = resourceGroup().location
 @minLength(3)
 param namePrefix string = 'aiincident'
 
-@description('App Service plan SKU for the FastAPI host. F1 is used to avoid the current B1 quota limit.')
+@description('App Service plan SKU for the FastAPI host. S1 Standard is the stable development/demo default.')
 @allowed([
   'F1'
   'B1'
+  'S1'
 ])
-param apiPlanSku string = 'F1'
+param apiPlanSku string = 'S1'
 
 @description('Tags applied to resources.')
 param tags object = {
@@ -159,7 +160,7 @@ resource apiPlan 'Microsoft.Web/serverfarms@2024-11-01' = {
   kind: 'linux'
   sku: {
     name: apiPlanSku
-    tier: apiPlanSku == 'F1' ? 'Free' : 'Basic'
+    tier: apiPlanSku == 'F1' ? 'Free' : apiPlanSku == 'B1' ? 'Basic' : 'Standard'
     capacity: 1
   }
   properties: {
@@ -253,6 +254,10 @@ resource apiApp 'Microsoft.Web/sites@2024-11-01' = {
         {
           name: 'OTEL_SERVICE_NAME'
           value: 'ai-incident-intelligence-api'
+        }
+        {
+          name: 'APPLICATIONINSIGHTS_METRIC_NAMESPACE_OPT_IN'
+          value: 'true'
         }
         {
           name: 'SCM_DO_BUILD_DURING_DEPLOYMENT'

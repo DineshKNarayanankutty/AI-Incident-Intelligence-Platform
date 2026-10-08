@@ -1,0 +1,15 @@
+# Runtime dependencies for the FastAPI app on Azure App Service.
+# The deploy workflow packages this file as requirements.txt so Oryx installs
+# only what app.main needs (no MLflow / Azure ML SDK / scikit-learn / pytest).
+
+# API
+fastapi>=0.115,<1
+uvicorn[standard]>=0.30,<1
+pydantic>=2.8,<3
+joblib==1.4.2  # imported by app.services.inference (local backend only)
+
+# Azure clients and telemetry
+azure-identity>=1.25,<2
+azure-ai-projects==2.8.0
+azure-monitor-opentelemetry==1.8.10
+openai>=3.0,<4

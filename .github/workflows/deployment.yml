@@ -6,6 +6,7 @@ on:
       approve:
         description: Type DEPLOY to allow endpoint deployment
         required: true
+        type: string
 
 permissions:
   id-token: write
@@ -23,19 +24,24 @@ jobs:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-      - name: Register model
-        run: |
-          az extension add --name ml --yes
-          az ml model create -f azure_ml/model.yml             --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}"             --workspace-name "${{ vars.AZURE_ML_WORKSPACE }}"
+      - name: Install Azure ML CLI extension
+        run: az extension add --name ml --yes
       - name: Create/update endpoint
         run: |
-          az ml online-endpoint create -f azure_ml/endpoints/managed-endpoint.yml             --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}"             --workspace-name "${{ vars.AZURE_ML_WORKSPACE }}"
-          az ml online-deployment create -f azure_ml/endpoints/managed-deployment.yml             --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}"             --workspace-name "${{ vars.AZURE_ML_WORKSPACE }}"             --all-traffic
+          az ml online-endpoint create \
+            -f azure_ml/endpoints/managed-endpoint.yml \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --workspace-name "${{ vars.AZURE_ML_WORKSPACE }}"
+          az ml online-deployment create \
+            -f azure_ml/endpoints/managed-deployment.yml \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --workspace-name "${{ vars.AZURE_ML_WORKSPACE }}" \
+            --all-traffic
 
       - name: Sync scoring URI to FastAPI
         run: |
           SCORING_URI=$(az ml online-endpoint show \
-            --name incident-severity-endpoint \
+            --name "${{ vars.AZURE_ML_ENDPOINT_NAME || 'incident-severity-endpoint' }}" \
             --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
             --workspace-name "${{ vars.AZURE_ML_WORKSPACE }}" \
             --query scoring_uri -o tsv)

@@ -31,20 +31,51 @@ jobs:
           python -m pytest -q
           python scripts/validate_project.py
 
-      - name: Configure Application Insights connection string
+      - name: Build clean App Service package
+        run: python scripts/package_api.py --out build/api-package
+
+      - name: Deploy FastAPI application
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ vars.AZURE_API_APP_NAME }}
+          package: build/api-package.zip
+
+      - name: Install Azure ML CLI extension
+        run: az extension add --name ml --yes
+
+      - name: Synchronize Azure runtime configuration
         shell: bash
         run: |
           APPINSIGHTS_CS=$(az monitor app-insights component show \
             --app "${{ vars.AZURE_APP_INSIGHTS_NAME }}" \
             --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
             --query connectionString -o tsv)
+
+          SCORING_URI=$(az ml online-endpoint show \
+            --name "${{ vars.AZURE_ML_ENDPOINT_NAME || 'incident-severity-endpoint' }}" \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --workspace-name "${{ vars.AZURE_ML_WORKSPACE }}" \
+            --query scoring_uri -o tsv)
+
           az webapp config appsettings set \
             --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
             --name "${{ vars.AZURE_API_APP_NAME }}" \
-            --settings APPLICATIONINSIGHTS_CONNECTION_STRING="$APPINSIGHTS_CS"
+            --settings \
+              APPLICATIONINSIGHTS_CONNECTION_STRING="$APPINSIGHTS_CS" \
+              AZURE_ML_SCORING_URI="$SCORING_URI" \
+              FOUNDRY_AGENT_NAME="${{ vars.FOUNDRY_AGENT_NAME || 'incident-operations-agent' }}" \
+              AZURE_AI_MODEL_DEPLOYMENT_NAME="${{ vars.AZURE_AI_MODEL_DEPLOYMENT_NAME || 'incident-gpt' }}" \
+              OTEL_SERVICE_NAME="ai-incident-intelligence-api" \
+              APPLICATIONINSIGHTS_METRIC_NAMESPACE_OPT_IN="true"
 
-      - name: Deploy FastAPI to App Service
-        uses: azure/webapps-deploy@v3
-        with:
-          app-name: ${{ vars.AZURE_API_APP_NAME }}
-          package: .
+      - name: Smoke test Azure API
+        shell: bash
+        run: |
+          HOSTNAME="${{ vars.AZURE_API_APP_NAME }}.azurewebsites.net"
+          for i in {1..12}; do
+            if curl --fail --silent --show-error "https://${HOSTNAME}/health"; then
+              exit 0
+            fi
+            sleep 10
+          done
+          exit 1

@@ -2,7 +2,7 @@
 
 Portfolio project for **AI-300: Operationalizing Machine Learning and Generative AI Solutions**.
 
-This repository now contains the complete code-ready path from the original Phase 1 local ML foundation through Azure ML, FastAPI, Microsoft Foundry, GenAIOps evaluation/observability, drift-triggered retraining, Bicep, CI/CD, tests, and documentation.
+This repository contains the code-ready platform path from the original Phase 1 local ML foundation through Azure ML, FastAPI, Microsoft Foundry, GenAIOps evaluation/observability, drift/retraining scaffolding, Bicep, CI/CD, tests, and documentation. Final candidate-model promotion/rollback is intentionally a later lifecycle step.
 
 > **Safety boundary:** this repository is code-ready, not deployed. No Azure resource creation is performed by the default local commands or test suite. Azure deployment workflows are explicit/manual.
 
@@ -75,6 +75,8 @@ Azure identifiers are environment variables/GitHub configuration, not source-cod
 10. Connect FastAPI to Azure backends.
 11. Enable Application Insights telemetry.
 12. Exercise drift/retraining workflow.
+
+The committed `data/reference/drift_baseline.json` is the stable reference profile for clean CI/retraining runs. Generated `outputs/` and `mlruns/` remain local/transient.
 
 ## Current Azure SDK basis
 

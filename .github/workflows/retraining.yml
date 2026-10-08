@@ -10,18 +10,55 @@ permissions:
 jobs:
   retraining:
     runs-on: ubuntu-latest
+    environment: production
     steps:
       - uses: actions/checkout@v4
+
       - uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-      - name: Drift gate
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
         run: |
-          python -m mlops.drift_check --reference outputs/model/drift_baseline.json             --data data/synthetic_incidents.csv
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run drift check
+        run: |
+          mkdir -p outputs/drift
+          python -m mlops.drift_check \
+            --reference data/reference/drift_baseline.json \
+            --data data/synthetic_incidents.csv \
+            --output outputs/drift/result.json
+
+      - name: Decide whether drift requires retraining
+        id: gate
+        shell: bash
+        run: |
+          DRIFT=$(python - <<'PY'
+          import json
+          with open('outputs/drift/result.json', encoding='utf-8') as f:
+              data = json.load(f)
+          print('true' if data.get('drift_detected') else 'false')
+          PY
+          )
+          echo "drift=$DRIFT" >> "$GITHUB_OUTPUT"
+
       - name: Trigger Azure ML training
-        if: ${{ success() }}
+        if: steps.gate.outputs.drift == 'true'
         run: |
           az extension add --name ml --yes
-          az ml job create -f azure_ml/pipeline.yml             --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}"             --workspace-name "${{ vars.AZURE_ML_WORKSPACE }}"
+          az ml job create \
+            --file azure_ml/pipeline.yml \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --workspace-name "${{ vars.AZURE_ML_WORKSPACE }}"
+
+      - name: Report no-drift result
+        if: steps.gate.outputs.drift != 'true'
+        run: echo "No drift threshold exceeded; no retraining job submitted."

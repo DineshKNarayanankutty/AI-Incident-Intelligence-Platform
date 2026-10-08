@@ -27,6 +27,7 @@ class PredictionResponse(BaseModel):
     confidence: float | None = None
     model_backend: str
     model_version: str | None = None
+    trace_id: str | None = None
 
 
 class IncidentAnalysisRequest(BaseModel):
@@ -38,3 +39,4 @@ class IncidentAnalysisResponse(BaseModel):
     prediction: PredictionResponse
     analysis: str
     prompt_version: str
+    trace_id: str | None = None

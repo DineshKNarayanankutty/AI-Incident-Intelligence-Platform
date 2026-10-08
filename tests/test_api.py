@@ -17,12 +17,24 @@ def test_health() -> None:
 
 
 def test_predict(monkeypatch) -> None:
-    class FakeLocalInference:
-        def predict(self, incident):
-            return {"severity": "High", "confidence": 0.91}
-
+    from app.api.schemas import PredictionResponse
     import app.main as main_module
-    monkeypatch.setattr(main_module.inference, "local", FakeLocalInference())
+
+    class FakeInferenceService:
+        def predict(self, incident):
+            return PredictionResponse(
+                incident_id=incident.incident_id,
+                severity="High",
+                confidence=0.91,
+                model_backend="local",
+                model_version="test",
+            )
+
+    monkeypatch.setattr(
+        main_module,
+        "get_inference_service",
+        lambda: FakeInferenceService(),
+    )
 
     payload = {
         "incident_id": "TEST-1",
@@ -40,6 +52,9 @@ def test_predict(monkeypatch) -> None:
         "has_data_loss": False,
         "is_security_related": False,
     }
+
     response = TestClient(app).post("/predict", json=payload)
+
     assert response.status_code == 200
-    assert response.json()["severity"] in {"Low", "Medium", "High", "Critical"}
+    assert response.json()["severity"] == "High"
+    assert response.json()["confidence"] == 0.91

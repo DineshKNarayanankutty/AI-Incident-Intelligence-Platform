@@ -52,8 +52,10 @@ Authentication uses `DefaultAzureCredential`; use managed identity/OIDC in Azure
 4. Azure ML training and model registration.
 5. Model/endpoint deployment (then sync scoring URI to App Service).
 6. Foundry agent/model setup.
-7. FastAPI deployment.
+7. FastAPI deployment (`FastAPI Deployment` workflow: tests, `scripts/package_api.py` clean runtime zip, App Service deployment, runtime configuration sync, smoke test).
 8. Evaluation, drift, and monitoring.
 9. E2E smoke test.
+
+Drift checks use `data/reference/drift_baseline.json`; retraining is only submitted when the configured PSI threshold is exceeded.
 
 The repository does not automatically deploy anything from a push.

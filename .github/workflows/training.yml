@@ -10,6 +10,7 @@ permissions:
 jobs:
   submit-training:
     runs-on: ubuntu-latest
+    environment: production
     steps:
       - uses: actions/checkout@v4
       - uses: azure/login@v2
@@ -20,4 +21,7 @@ jobs:
       - name: Submit Azure ML pipeline
         run: |
           az extension add --name ml --yes
-          az ml job create             --file azure_ml/pipeline.yml             --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}"             --workspace-name "${{ vars.AZURE_ML_WORKSPACE }}"
+          az ml job create \
+            --file azure_ml/pipeline.yml \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --workspace-name "${{ vars.AZURE_ML_WORKSPACE }}"

@@ -2,8 +2,26 @@
 from __future__ import annotations
 
 from functools import lru_cache
-from pydantic import BaseModel, Field
 import os
+
+from pydantic import BaseModel, Field
+
+
+def _env(*names: str, default: str = "") -> str:
+    """Return the first non-empty environment variable from the supplied names."""
+    for name in names:
+        value = os.getenv(name)
+        if value is not None and value.strip():
+            return value.strip()
+    return default
+
+
+def _clean_url(value: str) -> str:
+    """Normalize URLs copied from PowerShell/CLI output."""
+    value = value.strip().strip('"').strip("'")
+    if value.startswith("[") and value.endswith("]"):
+        value = value[1:-1].strip().strip('"').strip("'")
+    return value
 
 
 class Settings(BaseModel):
@@ -36,29 +54,56 @@ class Settings(BaseModel):
 
     @classmethod
     def from_env(cls) -> "Settings":
+        foundry_endpoint = _clean_url(
+            _env(
+                "AZURE_AI_PROJECT_ENDPOINT",
+                "FOUNDRY_PROJECT_ENDPOINT",
+            )
+        )
+        foundry_agent_name = _env("FOUNDRY_AGENT_NAME")
+
+        inference_backend = _env("INFERENCE_BACKEND", default="local").lower()
+        explicit_foundry_backend = _env("FOUNDRY_BACKEND").lower()
+        if explicit_foundry_backend:
+            foundry_backend = explicit_foundry_backend
+        elif foundry_endpoint and foundry_agent_name:
+            # Make the Azure backend deterministic when a complete Foundry
+            # configuration is supplied, even if FOUNDRY_BACKEND was omitted.
+            foundry_backend = "azure"
+        else:
+            foundry_backend = "local"
+
         return cls(
-            app_name=os.getenv("APP_NAME", "AI Incident Intelligence Platform"),
-            environment=os.getenv("APP_ENV", "local"),
-            inference_backend=os.getenv("INFERENCE_BACKEND", "local"),
-            foundry_backend=os.getenv("FOUNDRY_BACKEND", "local"),
-            log_level=os.getenv("LOG_LEVEL", "INFO"),
-            model_path=os.getenv("MODEL_PATH", "outputs/model/model.joblib"),
-            drift_baseline_path=os.getenv("DRIFT_BASELINE_PATH", "outputs/model/drift_baseline.json"),
-            azure_subscription_id=os.getenv("AZURE_SUBSCRIPTION_ID", ""),
-            azure_resource_group=os.getenv("AZURE_RESOURCE_GROUP", ""),
-            azure_ml_workspace=os.getenv("AZURE_ML_WORKSPACE", ""),
-            azure_ml_endpoint_name=os.getenv("AZURE_ML_ENDPOINT_NAME", ""),
-            azure_ml_deployment_name=os.getenv("AZURE_ML_DEPLOYMENT_NAME", "blue"),
-            azure_ml_model_name=os.getenv("AZURE_ML_MODEL_NAME", "incident-severity"),
-            azure_ml_model_version=os.getenv("AZURE_ML_MODEL_VERSION", "1"),
-            azure_ml_scoring_uri=os.getenv("AZURE_ML_SCORING_URI", ""),
-            azure_ml_timeout_seconds=float(os.getenv("AZURE_ML_TIMEOUT_SECONDS", "30")),
-            foundry_project_endpoint=os.getenv("AZURE_AI_PROJECT_ENDPOINT", ""),
-            foundry_agent_name=os.getenv("FOUNDRY_AGENT_NAME", ""),
-            foundry_agent_version=os.getenv("FOUNDRY_AGENT_VERSION", ""),
-            foundry_model_deployment=os.getenv("AZURE_AI_MODEL_DEPLOYMENT_NAME", ""),
-            applicationinsights_connection_string=os.getenv("APPLICATIONINSIGHTS_CONNECTION_STRING", ""),
-            otel_service_name=os.getenv("OTEL_SERVICE_NAME", "ai-incident-intelligence-api"),
+            app_name=_env("APP_NAME", default="AI Incident Intelligence Platform"),
+            environment=_env("APP_ENV", default="local"),
+            inference_backend=inference_backend,
+            foundry_backend=foundry_backend,
+            log_level=_env("LOG_LEVEL", default="INFO"),
+            model_path=_env("MODEL_PATH", default="outputs/model/model.joblib"),
+            drift_baseline_path=_env(
+                "DRIFT_BASELINE_PATH",
+                default="outputs/model/drift_baseline.json",
+            ),
+            azure_subscription_id=_env("AZURE_SUBSCRIPTION_ID"),
+            azure_resource_group=_env("AZURE_RESOURCE_GROUP"),
+            azure_ml_workspace=_env("AZURE_ML_WORKSPACE"),
+            azure_ml_endpoint_name=_env("AZURE_ML_ENDPOINT_NAME"),
+            azure_ml_deployment_name=_env("AZURE_ML_DEPLOYMENT_NAME", default="blue"),
+            azure_ml_model_name=_env("AZURE_ML_MODEL_NAME", default="incident-severity"),
+            azure_ml_model_version=_env("AZURE_ML_MODEL_VERSION", default="1"),
+            azure_ml_scoring_uri=_clean_url(_env("AZURE_ML_SCORING_URI")),
+            azure_ml_timeout_seconds=float(_env("AZURE_ML_TIMEOUT_SECONDS", default="30")),
+            foundry_project_endpoint=foundry_endpoint,
+            foundry_agent_name=foundry_agent_name,
+            foundry_agent_version=_env("FOUNDRY_AGENT_VERSION"),
+            foundry_model_deployment=_env("AZURE_AI_MODEL_DEPLOYMENT_NAME"),
+            applicationinsights_connection_string=_env(
+                "APPLICATIONINSIGHTS_CONNECTION_STRING"
+            ),
+            otel_service_name=_env(
+                "OTEL_SERVICE_NAME",
+                default="ai-incident-intelligence-api",
+            ),
         )
 
 

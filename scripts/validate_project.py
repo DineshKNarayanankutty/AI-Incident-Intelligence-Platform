@@ -18,8 +18,17 @@ REQUIRED_FILES = [
     "azure_ml/endpoints/managed-endpoint.yml",
     "azure_ml/endpoints/managed-deployment.yml",
     "infra/bicep/main.bicep",
+    "infra/bicep/main.json",
+    "requirements-runtime.txt",
+    "data/reference/drift_baseline.json",
+    "scripts/package_api.py",
     ".github/workflows/ci.yml",
     ".github/workflows/api-deployment.yml",
+    ".github/workflows/deployment.yml",
+    ".github/workflows/evaluation.yml",
+    ".github/workflows/infrastructure.yml",
+    ".github/workflows/retraining.yml",
+    ".github/workflows/training.yml",
 ]
 
 

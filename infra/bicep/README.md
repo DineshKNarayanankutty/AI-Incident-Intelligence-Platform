@@ -10,12 +10,12 @@ Resources:
 - Azure Container Registry with admin auth disabled
 - Azure Machine Learning workspace with system-assigned identity
 - Microsoft Foundry/AIServices account and project
-- Linux App Service Plan (B1 by default)
+- Linux App Service Plan (S1 by default)
 - Linux App Service for FastAPI with system-assigned identity
 - Least-privilege RBAC for FastAPI to invoke Azure ML online endpoints
 - Foundry Agent Consumer RBAC for FastAPI at project scope
 
-The App Service uses Python 3.11 and starts FastAPI with Uvicorn. Azure ML scoring URI and Foundry agent name are intentionally blank until those artifacts exist; the deployment workflows populate them later.
+The App Service uses Python 3.11 and starts FastAPI with Uvicorn. Azure ML scoring URI and Foundry agent settings are lifecycle configuration populated by the deployment workflows after the corresponding Azure artifacts exist. Bicep owns the infrastructure and stable settings; artifact-specific values are synchronized after deployment.
 
 No secrets are stored in Bicep. Authentication is via managed identity.
 

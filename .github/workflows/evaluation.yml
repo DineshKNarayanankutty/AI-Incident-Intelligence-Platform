@@ -24,16 +24,17 @@ permissions:
 jobs:
   evaluate:
     runs-on: ubuntu-latest
+    environment: production
     env:
-      FOUNDRY_BACKEND: azure
-      AZURE_AI_PROJECT_ENDPOINT: https://aiincident77a8b195-ai.services.ai.azure.com/api/projects/aiincident77a8b195-project
-      FOUNDRY_AGENT_NAME: incident-operations-agent
+      AZURE_AI_PROJECT_ENDPOINT: ${{ vars.AZURE_AI_PROJECT_ENDPOINT }}
+      FOUNDRY_AGENT_NAME: ${{ vars.FOUNDRY_AGENT_NAME }}
+      FOUNDRY_BACKEND: ${{ inputs.backend == 'foundry' && 'azure' || 'local' }}
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.10"
+          python-version: "3.11"
 
       - name: Install dependencies
         run: |
