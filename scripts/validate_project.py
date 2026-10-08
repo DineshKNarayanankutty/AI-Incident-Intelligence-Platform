@@ -24,6 +24,7 @@ REQUIRED_FILES = [
     "data/reference/production_model_metrics.json",
     "scripts/package_api.py",
     "scripts/evaluate_candidate.py",
+    "scripts/generate_drift_demo.py",
     "scripts/next_model_version.py",
     "mlops/model_gate.py",
     ".github/workflows/ci.yml",

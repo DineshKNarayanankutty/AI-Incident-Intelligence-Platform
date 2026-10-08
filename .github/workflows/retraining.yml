@@ -2,6 +2,12 @@ name: Drift Retraining
 
 on:
   workflow_dispatch:
+    inputs:
+      demo_drift:
+        description: Generate controlled drift data to exercise the full retraining path
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   id-token: write
@@ -29,12 +35,29 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Select drift-check dataset
+        id: dataset
+        shell: bash
+        env:
+          DEMO_DRIFT: ${{ inputs.demo_drift }}
+        run: |
+          if [ "$DEMO_DRIFT" = "true" ]; then
+            python scripts/generate_drift_demo.py \
+              --source data/synthetic_incidents.csv \
+              --output outputs/drift_demo/synthetic_incidents_drifted.csv
+            echo "path=outputs/drift_demo/synthetic_incidents_drifted.csv" >> "$GITHUB_OUTPUT"
+            echo "mode=controlled-demo" >> "$GITHUB_OUTPUT"
+          else
+            echo "path=data/synthetic_incidents.csv" >> "$GITHUB_OUTPUT"
+            echo "mode=production-reference" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Run drift check
         run: |
           mkdir -p outputs/drift
           python -m mlops.drift_check \
             --reference data/reference/drift_baseline.json \
-            --data data/synthetic_incidents.csv \
+            --data "${{ steps.dataset.outputs.path }}" \
             --output outputs/drift/result.json
 
       - name: Decide whether drift requires retraining
@@ -51,17 +74,55 @@ jobs:
           echo "drift=$DRIFT" >> "$GITHUB_OUTPUT"
           echo "Drift detected: $DRIFT"
 
+      - name: Create temporary Azure ML data asset for demo retraining
+        if: steps.gate.outputs.drift == 'true' && inputs.demo_drift == true
+        shell: bash
+        env:
+          DATA_PATH: ${{ steps.dataset.outputs.path }}
+          ASSET_VERSION: ${{ github.run_id }}
+          RG: ${{ vars.AZURE_RESOURCE_GROUP }}
+          WS: ${{ vars.AZURE_ML_WORKSPACE }}
+        run: |
+          cat > outputs/drift-demo-data.yml <<EOF
+          $schema: https://azuremlschemas.azureedge.net/latest/data.schema.json
+          type: uri_file
+          name: incident-severity-drift-demo
+          version: "${ASSET_VERSION}"
+          path: "${DATA_PATH}"
+          description: "Controlled drift dataset generated for the retraining demonstration."
+          EOF
+          az extension add --name ml --yes
+          az ml data create \
+            --file outputs/drift-demo-data.yml \
+            --resource-group "$RG" \
+            --workspace-name "$WS"
+
       - name: Submit Azure ML candidate training
         if: steps.gate.outputs.drift == 'true'
         id: submit
         shell: bash
+        env:
+          DEMO_DRIFT: ${{ inputs.demo_drift }}
+          DATA_ASSET_VERSION: ${{ github.run_id }}
+          DATA_PATH: ${{ steps.dataset.outputs.path }}
         run: |
           az extension add --name ml --yes
-          JOB_NAME=$(az ml job create \
-            --file azure_ml/pipeline.yml \
-            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
-            --workspace-name "${{ vars.AZURE_ML_WORKSPACE }}" \
-            --query name -o tsv)
+          if [ "$DEMO_DRIFT" = "true" ]; then
+            TRAINING_DATA="azureml:incident-severity-drift-demo:${DATA_ASSET_VERSION}"
+            echo "Using demo Azure ML data asset: $TRAINING_DATA"
+            JOB_NAME=$(az ml job create \
+              --file azure_ml/pipeline.yml \
+              --set "jobs.train.inputs.training_data.path=$TRAINING_DATA" \
+              --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+              --workspace-name "${{ vars.AZURE_ML_WORKSPACE }}" \
+              --query name -o tsv)
+          else
+            JOB_NAME=$(az ml job create \
+              --file azure_ml/pipeline.yml \
+              --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+              --workspace-name "${{ vars.AZURE_ML_WORKSPACE }}" \
+              --query name -o tsv)
+          fi
           echo "job_name=$JOB_NAME" >> "$GITHUB_OUTPUT"
           echo "Azure ML candidate training job: $JOB_NAME"
 
