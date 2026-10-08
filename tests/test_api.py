@@ -16,7 +16,14 @@ def test_health() -> None:
     assert response.json()["status"] == "ok"
 
 
-def test_predict() -> None:
+def test_predict(monkeypatch) -> None:
+    class FakeLocalInference:
+        def predict(self, incident):
+            return {"severity": "High", "confidence": 0.91}
+
+    import app.main as main_module
+    monkeypatch.setattr(main_module.inference, "local", FakeLocalInference())
+
     payload = {
         "incident_id": "TEST-1",
         "title": "Checkout timeout",

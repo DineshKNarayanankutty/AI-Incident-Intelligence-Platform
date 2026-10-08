@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Callable
 
 from genai.evaluation.evaluators import evaluate_response
+from genai.evaluation.gate import DEFAULT_MIN_OVERALL, run_gate
 from genai.prompts.loader import load_prompt
 
 
@@ -137,6 +138,8 @@ def main() -> None:
     parser.add_argument("--prompt", choices=["v1", "v2", "both"], default="both")
     parser.add_argument("--output-dir", type=Path, default=Path("outputs/evaluation"))
     parser.add_argument("--backend", choices=["local", "foundry"], default="local")
+    parser.add_argument("--quality-gate", action="store_true", help="Run the promotion quality gate after comparing V1 and V2.")
+    parser.add_argument("--min-overall", type=float, default=DEFAULT_MIN_OVERALL, help="Minimum V2 overall score required by the quality gate.")
     args = parser.parse_args()
 
     responder = _local_responder if args.backend == "local" else _foundry_responder()
@@ -157,6 +160,9 @@ def main() -> None:
         comparison_path = args.output_dir / "comparison.json"
         comparison_path.write_text(json.dumps(comparison, indent=2), encoding="utf-8")
         print(json.dumps(comparison, indent=2))
+
+        if args.quality_gate:
+            raise SystemExit(run_gate(comparison_path, min_overall=args.min_overall))
 
 
 if __name__ == "__main__":

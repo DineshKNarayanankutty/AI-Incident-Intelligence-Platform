@@ -2,6 +2,20 @@ name: GenAIOps Evaluation
 
 on:
   workflow_dispatch:
+    inputs:
+      backend:
+        description: Evaluation backend
+        required: true
+        default: foundry
+        type: choice
+        options:
+          - foundry
+          - local
+      min_overall:
+        description: Minimum V2 overall score
+        required: true
+        default: "0.80"
+        type: string
 
 permissions:
   id-token: write
@@ -10,15 +24,35 @@ permissions:
 jobs:
   evaluate:
     runs-on: ubuntu-latest
+    env:
+      FOUNDRY_BACKEND: azure
+      AZURE_AI_PROJECT_ENDPOINT: https://aiincident77a8b195-ai.services.ai.azure.com/api/projects/aiincident77a8b195-project
+      FOUNDRY_AGENT_NAME: incident-operations-agent
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
-      - run: pip install -r requirements.txt
-      - name: Run local deterministic evaluation
+          python-version: "3.10"
+
+      - name: Install dependencies
         run: |
-          python -m genai.evaluation.runner --prompt v1 --output outputs/evaluation/v1.json
-          python -m genai.evaluation.runner --prompt v2 --output outputs/evaluation/v2.json
-      # A cloud-enabled evaluation step can use Foundry credentials through OIDC.
-      # No secret/API key is stored in this repository.
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Sign in to Azure for Foundry evaluation
+        if: inputs.backend == 'foundry'
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Run evaluation and quality gate
+        run: |
+          python -m genai.evaluation.runner \
+            --backend "${{ inputs.backend }}" \
+            --prompt both \
+            --output-dir outputs/evaluation \
+            --quality-gate \
+            --min-overall "${{ inputs.min_overall }}"
