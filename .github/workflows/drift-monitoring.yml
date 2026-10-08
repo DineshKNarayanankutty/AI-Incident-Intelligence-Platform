@@ -254,7 +254,7 @@ jobs:
           gh workflow run retraining.yml \
             --ref "$DEFAULT_BRANCH" \
             -f demo_drift=false \
-            -f training_data_blob="production/training/current/incidents.csv"
+            -f training_data_blob="training/current/incidents.csv"
           echo "Triggered Drift Retraining with labeled production snapshot on $DEFAULT_BRANCH."
 
       - name: Report drift without enough labels
