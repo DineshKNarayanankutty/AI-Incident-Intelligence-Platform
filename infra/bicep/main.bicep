@@ -15,10 +15,10 @@ param namePrefix string = 'aiincident'
 ])
 param apiPlanSku string = 'S1'
 
-@description('Tags applied to resources.')
 @description('Optional Microsoft Entra object ID for the GitHub Actions service principal. When supplied, grants read-only access to production incident blobs.')
 param githubActionsPrincipalObjectId string = ''
 
+@description('Tags applied to resources.')
 param tags object = {
   project: 'ai-incident-intelligence'
   environment: 'dev'

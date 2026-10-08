@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.48.1.52935",
-      "templateHash": "9256634873012639313"
+      "templateHash": "15780312059378109068"
     }
   },
   "parameters": {
@@ -34,6 +34,13 @@
       ],
       "metadata": {
         "description": "App Service plan SKU for the FastAPI host. S1 Standard is the stable development/demo default."
+      }
+    },
+    "githubActionsPrincipalObjectId": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Optional Microsoft Entra object ID for the GitHub Actions service principal. When supplied, grants read-only access to production incident blobs."
       }
     },
     "tags": {
@@ -75,6 +82,25 @@
         "allowBlobPublicAccess": false,
         "supportsHttpsTrafficOnly": true
       }
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/blobServices",
+      "apiVersion": "2023-05-01",
+      "name": "[format('{0}/{1}', variables('storageName'), 'default')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts', variables('storageName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+      "apiVersion": "2023-05-01",
+      "name": "[format('{0}/{1}/{2}', variables('storageName'), 'default', 'production')]",
+      "properties": {
+        "publicAccess": "None"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts/blobServices', variables('storageName'), 'default')]"
+      ]
     },
     {
       "type": "Microsoft.OperationalInsights/workspaces",
@@ -294,6 +320,22 @@
               "value": ""
             },
             {
+              "name": "AZURE_STORAGE_ACCOUNT_NAME",
+              "value": "[variables('storageName')]"
+            },
+            {
+              "name": "PRODUCTION_SNAPSHOT_CONTAINER",
+              "value": "production"
+            },
+            {
+              "name": "PRODUCTION_EVENTS_PREFIX",
+              "value": "events"
+            },
+            {
+              "name": "PRODUCTION_SNAPSHOT_ENABLED",
+              "value": "true"
+            },
+            {
               "name": "APPLICATIONINSIGHTS_CONNECTION_STRING",
               "value": "[reference(resourceId('Microsoft.Insights/components', variables('appInsightsName')), '2020-02-02').ConnectionString]"
             },
@@ -325,6 +367,52 @@
         "[resourceId('Microsoft.Insights/components', variables('appInsightsName'))]",
         "[resourceId('Microsoft.CognitiveServices/accounts', variables('foundryAccountName'))]",
         "[resourceId('Microsoft.CognitiveServices/accounts/projects', variables('foundryAccountName'), variables('foundryProjectName'))]",
+        "[resourceId('Microsoft.MachineLearningServices/workspaces', variables('mlWorkspaceName'))]",
+        "[resourceId('Microsoft.Storage/storageAccounts', variables('storageName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[resourceId('Microsoft.Storage/storageAccounts/blobServices/containers', variables('storageName'), 'default', 'production')]",
+      "name": "[guid(resourceId('Microsoft.Storage/storageAccounts/blobServices/containers', variables('storageName'), 'default', 'production'), resourceId('Microsoft.Web/sites', variables('apiAppName')), 'production-blob-contributor')]",
+      "properties": {
+        "principalId": "[reference(resourceId('Microsoft.Web/sites', variables('apiAppName')), '2024-11-01', 'full').identity.principalId]",
+        "principalType": "ServicePrincipal",
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/sites', variables('apiAppName'))]",
+        "[resourceId('Microsoft.Storage/storageAccounts/blobServices/containers', variables('storageName'), 'default', 'production')]"
+      ]
+    },
+    {
+      "condition": "[not(empty(parameters('githubActionsPrincipalObjectId')))]",
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[resourceId('Microsoft.Storage/storageAccounts/blobServices/containers', variables('storageName'), 'default', 'production')]",
+      "name": "[guid(resourceId('Microsoft.Storage/storageAccounts/blobServices/containers', variables('storageName'), 'default', 'production'), parameters('githubActionsPrincipalObjectId'), 'production-blob-reader')]",
+      "properties": {
+        "principalId": "[parameters('githubActionsPrincipalObjectId')]",
+        "principalType": "ServicePrincipal",
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '2a2b9908-6ea1-4ae2-8e65-a410df84e7d1')]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts/blobServices/containers', variables('storageName'), 'default', 'production')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[resourceId('Microsoft.ContainerRegistry/registries', variables('acrName'))]",
+      "name": "[guid(resourceId('Microsoft.ContainerRegistry/registries', variables('acrName')), resourceId('Microsoft.MachineLearningServices/workspaces', variables('mlWorkspaceName')), 'azureml-workspace-acrpull')]",
+      "properties": {
+        "principalId": "[reference(resourceId('Microsoft.MachineLearningServices/workspaces', variables('mlWorkspaceName')), '2026-03-01', 'full').identity.principalId]",
+        "principalType": "ServicePrincipal",
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ContainerRegistry/registries', variables('acrName'))]",
         "[resourceId('Microsoft.MachineLearningServices/workspaces', variables('mlWorkspaceName'))]"
       ]
     },
