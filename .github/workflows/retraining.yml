@@ -42,7 +42,7 @@ jobs:
           DEMO_DRIFT: ${{ inputs.demo_drift }}
         run: |
           if [ "$DEMO_DRIFT" = "true" ]; then
-            python scripts/generate_drift_demo.py \
+            python -m scripts.generate_drift_demo \
               --source data/synthetic_incidents.csv \
               --output outputs/drift_demo/synthetic_incidents_drifted.csv
             echo "path=outputs/drift_demo/synthetic_incidents_drifted.csv" >> "$GITHUB_OUTPUT"
@@ -154,7 +154,7 @@ jobs:
         run: |
           METRICS_PATH=$(find outputs/candidate -name metrics.json -print -quit)
           test -n "$METRICS_PATH"
-          python scripts/evaluate_candidate.py \
+          python -m scripts.evaluate_candidate \
             --candidate-metrics "$METRICS_PATH" \
             --production-metrics data/reference/production_model_metrics.json \
             --output outputs/candidate/gate.json
@@ -169,7 +169,7 @@ jobs:
             --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
             --workspace-name "${{ vars.AZURE_ML_WORKSPACE }}" \
             -o json > outputs/candidate/models.json
-          VERSION=$(python scripts/next_model_version.py outputs/candidate/models.json)
+          VERSION=$(python -m scripts.next_model_version outputs/candidate/models.json)
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Candidate model version: $VERSION"
 
