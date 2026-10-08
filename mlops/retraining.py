@@ -39,7 +39,7 @@ def retrain_if_needed(
     production_metrics_path: Path = Path("data/reference/production_model_metrics.json"),
     min_accuracy: float = 0.80,
     min_macro_f1: float = 0.80,
-    evaluation_data_path: Path | None = Path("data/synthetic_incidents.csv"),
+    evaluation_data_path: Path | None = Path("data/reference/candidate_evaluation.csv"),
 ) -> dict[str, Any]:
     reference = json.loads(reference_profile_path.read_text(encoding="utf-8"))
     rows = load_rows(data_path)

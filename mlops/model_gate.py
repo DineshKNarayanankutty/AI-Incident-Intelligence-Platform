@@ -12,6 +12,8 @@ from typing import Any
 
 DEFAULT_MIN_ACCURACY = 0.80
 DEFAULT_MIN_MACRO_F1 = 0.80
+# Guards only against float noise when both models are scored on identical data.
+DEFAULT_TOLERANCE = 1e-9
 
 
 def _metric(payload: dict[str, Any], key: str) -> float:
@@ -35,6 +37,7 @@ def evaluate_candidate(
     *,
     min_accuracy: float = DEFAULT_MIN_ACCURACY,
     min_macro_f1: float = DEFAULT_MIN_MACRO_F1,
+    tolerance: float = DEFAULT_TOLERANCE,
 ) -> dict[str, Any]:
     candidate_accuracy = _metric(candidate, "accuracy")
     candidate_macro_f1 = _metric(candidate, "macro_f1")
@@ -44,9 +47,14 @@ def evaluate_candidate(
     checks = {
         "candidate_accuracy_meets_minimum": candidate_accuracy >= min_accuracy,
         "candidate_macro_f1_meets_minimum": candidate_macro_f1 >= min_macro_f1,
-        "candidate_accuracy_not_below_production": candidate_accuracy >= production_accuracy,
-        "candidate_macro_f1_not_below_production": candidate_macro_f1 >= production_macro_f1,
+        "candidate_accuracy_not_below_production": candidate_accuracy >= production_accuracy - tolerance,
+        "candidate_macro_f1_not_below_production": candidate_macro_f1 >= production_macro_f1 - tolerance,
     }
+    # Both sides must be scored on the same fixed evaluation data when known.
+    candidate_dataset = candidate.get("evaluation_dataset_sha256")
+    production_dataset = production.get("evaluation_dataset_sha256")
+    if candidate_dataset and production_dataset:
+        checks["same_evaluation_dataset"] = candidate_dataset == production_dataset
 
     return {
         "passed": all(checks.values()),
@@ -54,16 +62,19 @@ def evaluate_candidate(
         "candidate": {
             "accuracy": candidate_accuracy,
             "macro_f1": candidate_macro_f1,
+            "evaluation_dataset_sha256": candidate_dataset,
         },
         "production": {
             "model_name": production.get("model_name"),
             "model_version": production.get("model_version"),
             "accuracy": production_accuracy,
             "macro_f1": production_macro_f1,
+            "evaluation_dataset_sha256": production_dataset,
         },
         "thresholds": {
             "min_accuracy": min_accuracy,
             "min_macro_f1": min_macro_f1,
+            "tolerance": tolerance,
         },
         "delta": {
             "accuracy": candidate_accuracy - production_accuracy,

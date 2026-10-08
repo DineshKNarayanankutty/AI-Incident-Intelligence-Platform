@@ -1,75 +1,101 @@
+"""Candidate evaluation uses the fixed clean holdout, never the candidate's own data."""
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import accuracy_score, f1_score
-from sklearn.model_selection import train_test_split
-from sklearn.pipeline import Pipeline
+import pytest
 
-from src.data.generate_synthetic_data import SEVERITIES
-from src.training.drift import load_incident_rows
-from src.training.features import incident_text
 from mlops.model_gate import evaluate_candidate
-
+from mlops.retraining import retrain_if_needed
+from scripts.build_candidate_evaluation import write_evaluation_csv
+from scripts.generate_drift_demo import generate_demo
+from src.training.reference_split import dataset_fingerprint, reference_split
+from src.training.train import load_rows, train_model
 
 ROOT = Path(__file__).resolve().parents[1]
+SOURCE = ROOT / "data" / "synthetic_incidents.csv"
+EVALUATION = ROOT / "data" / "reference" / "candidate_evaluation.csv"
+BASELINE = ROOT / "data" / "reference" / "production_model_metrics.json"
+DRIFT_BASELINE = ROOT / "data" / "reference" / "drift_baseline.json"
 
 
-def test_candidate_is_evaluated_against_fixed_reference_holdout() -> None:
-    reference_path = ROOT / "data" / "synthetic_incidents.csv"
-    demo_path = ROOT / "outputs" / "_test_drift_candidate.csv"
+def test_committed_evaluation_set_is_the_deterministic_holdout(tmp_path):
+    _, expected = reference_split(load_rows(SOURCE))
+    committed = load_rows(EVALUATION)
+    assert committed == expected
+    assert len(committed) == 100
 
-    # Recreate the controlled demo in-memory so the test does not require
-    # generated artifacts in the repository.
-    import csv
-    source_rows = load_incident_rows(reference_path)
-    demo_rows = [dict(row) for row in source_rows]
-    for index, row in enumerate(demo_rows):
-        row["description"] = f"{row['description']}{' ' * (600 if index % 2 == 0 else 900)}"
+    rebuilt = tmp_path / "rebuilt.csv"
+    write_evaluation_csv(expected, rebuilt)
+    assert dataset_fingerprint(load_rows(rebuilt)) == dataset_fingerprint(committed)
 
-    reference_features = [incident_text(row) for row in source_rows]
-    reference_labels = [row["severity"] for row in source_rows]
-    _, _, _, _, _, reference_holdout = train_test_split(
-        reference_features,
-        reference_labels,
-        source_rows,
-        test_size=0.25,
-        random_state=42,
-        stratify=reference_labels,
+
+def test_production_baseline_is_full_precision_on_the_fixed_set():
+    baseline = json.loads(BASELINE.read_text(encoding="utf-8"))
+    assert baseline["evaluation_dataset"] == "data/reference/candidate_evaluation.csv"
+    assert baseline["evaluation_random_state"] == 42
+    assert baseline["evaluation_dataset_sha256"] == dataset_fingerprint(load_rows(EVALUATION))
+    assert baseline["macro_f1"] != 0.809  # not the rounded value
+    assert round(baseline["accuracy"], 2) == 0.80 and round(baseline["macro_f1"], 3) == 0.809
+
+
+def test_training_uses_evaluation_data_as_is_and_keeps_it_out_of_training(tmp_path):
+    summary = train_model(
+        SOURCE, tmp_path / "m", mlflow_tracking_uri=f"sqlite:///{tmp_path / 'ml.db'}",
+        register_model=False, evaluation_data_path=EVALUATION,
+    )
+    metrics = json.loads((tmp_path / "m" / "metrics.json").read_text(encoding="utf-8"))
+    assert metrics["evaluation_rows"] == 100  # not re-split
+    assert metrics["train_rows"] == 300
+    assert metrics["training_rows_excluded_as_evaluation_overlap"] == 100
+    assert metrics["evaluation_dataset_sha256"] == dataset_fingerprint(load_rows(EVALUATION))
+    assert summary["metrics"]["accuracy"] == metrics["accuracy"]
+
+
+def test_controlled_demo_detects_drift_and_candidate_passes_gate(tmp_path):
+    drifted = tmp_path / "drifted.csv"
+    generate_demo(SOURCE, drifted)
+
+    result = retrain_if_needed(
+        drifted, DRIFT_BASELINE, tmp_path / "candidate",
+        tracking_uri=f"sqlite:///{tmp_path / 'ml.db'}",
+        production_metrics_path=BASELINE,
+        evaluation_data_path=EVALUATION,
     )
 
-    candidate_features = [incident_text(row) for row in demo_rows]
-    candidate_labels = [row["severity"] for row in demo_rows]
+    assert result["drift"]["drift_detected"] is True
+    assert result["retrained"] is True
+    gate = result["candidate_gate"]
+    assert gate["passed"] is True, gate
+    assert all(gate["checks"].values())
+    assert gate["checks"]["same_evaluation_dataset"] is True
 
-    candidate_model = Pipeline([
-        ("tfidf", TfidfVectorizer(ngram_range=(1, 2), min_df=2, max_features=5000)),
-        ("classifier", LogisticRegression(max_iter=1000, class_weight="balanced", random_state=42)),
-    ])
-    candidate_model.fit(candidate_features, candidate_labels)
 
-    eval_features = [incident_text(row) for row in reference_holdout]
-    eval_labels = [row["severity"] for row in reference_holdout]
-    predictions = candidate_model.predict(eval_features)
+def test_bad_candidate_fails_gate_on_fixed_evaluation(tmp_path):
+    rows = load_rows(SOURCE)
+    labels = sorted({r["severity"] for r in rows})
+    for index, row in enumerate(rows):  # corrupt labels: a deliberately bad candidate
+        row["severity"] = labels[(index * 7) % len(labels)]
+    bad = tmp_path / "bad.csv"
+    write_evaluation_csv(rows, bad)
 
-    candidate_metrics = {
-        "accuracy": accuracy_score(eval_labels, predictions),
-        "macro_f1": f1_score(
-            eval_labels,
-            predictions,
-            labels=SEVERITIES,
-            average="macro",
-            zero_division=0,
-        ),
-    }
-    production_metrics = {
-        "model_name": "incident-severity",
-        "model_version": "1",
-        "accuracy": 0.80,
-        "macro_f1": 0.809,
-    }
+    train_model(
+        bad, tmp_path / "m", mlflow_tracking_uri=f"sqlite:///{tmp_path / 'ml.db'}",
+        register_model=False, evaluation_data_path=EVALUATION,
+    )
+    candidate = json.loads((tmp_path / "m" / "metrics.json").read_text(encoding="utf-8"))
+    gate = evaluate_candidate(candidate, json.loads(BASELINE.read_text(encoding="utf-8")))
 
-    result = evaluate_candidate(candidate_metrics, production_metrics)
-    assert result["passed"] is True
-    assert candidate_metrics["macro_f1"] >= production_metrics["macro_f1"]
+    assert gate["passed"] is False
+    assert gate["checks"]["candidate_accuracy_meets_minimum"] is False
+    assert gate["checks"]["candidate_accuracy_not_below_production"] is False
+
+
+def test_gate_rejects_mismatched_evaluation_datasets():
+    gate = evaluate_candidate(
+        {"accuracy": 0.9, "macro_f1": 0.9, "evaluation_dataset_sha256": "a"},
+        {"accuracy": 0.8, "macro_f1": 0.8, "evaluation_dataset_sha256": "b"},
+    )
+    assert gate["passed"] is False
+    assert gate["checks"]["same_evaluation_dataset"] is False

@@ -56,7 +56,7 @@ def test_training_compute_and_evaluation_protocol_are_pinned() -> None:
 
     pipeline = yaml.safe_load((ROOT / "azure_ml/pipeline.yml").read_text(encoding="utf-8"))
     inputs = pipeline["jobs"]["train"]["inputs"]
-    assert inputs["evaluation_data"]["path"] == "azureml:incident-severity-data:1"
+    assert inputs["evaluation_data"]["path"] == "../data/reference/candidate_evaluation.csv"
 
     component = yaml.safe_load((ROOT / "azure_ml/components/train.yml").read_text(encoding="utf-8"))
     assert component["version"] == 2

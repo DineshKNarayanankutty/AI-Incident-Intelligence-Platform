@@ -23,6 +23,7 @@ from sklearn.pipeline import Pipeline
 from src.data.generate_synthetic_data import FIELDNAMES, SEVERITIES
 from src.training.drift import build_drift_profile
 from src.training.evaluate import classification_metrics, majority_class_baseline
+from src.training.reference_split import dataset_fingerprint
 
 
 DEFAULT_TRACKING_URI = "sqlite:///outputs/mlflow/mlflow.db"
@@ -82,23 +83,27 @@ def train_model(
     features = [incident_text(row) for row in rows]
     labels = [row["severity"] for row in rows]
 
-    # Candidate retraining can use all current/drifted data for fitting and a
-    # fixed clean reference dataset for evaluation. This makes the quality gate
-    # comparable with the committed production baseline instead of comparing
-    # metrics measured on two different holdout distributions.
+    # Candidate retraining fits on the current/drifted data and is evaluated on a
+    # fixed clean reference dataset, used exactly as provided (never re-split),
+    # so the quality gate compares like with like against the production
+    # baseline. Rows whose incident_id appears in the evaluation set are removed
+    # from training so the evaluation holdout stays unseen by the candidate.
+    evaluation_fingerprint = None
+    excluded_overlap = 0
     if evaluation_data_path is not None:
         evaluation_rows = load_rows(evaluation_data_path)
-        evaluation_features = [incident_text(row) for row in evaluation_rows]
-        evaluation_labels = [row["severity"] for row in evaluation_rows]
-        _, x_test, _, y_test, _, rows_test = train_test_split(
-            evaluation_features,
-            evaluation_labels,
-            evaluation_rows,
-            test_size=test_size,
-            random_state=random_state,
-            stratify=evaluation_labels,
-        )
+        evaluation_ids = {row["incident_id"] for row in evaluation_rows}
+        rows = [row for row in rows if row["incident_id"] not in evaluation_ids]
+        excluded_overlap = len(features) - len(rows)
+        if not rows:
+            raise ValueError("No training rows remain after removing evaluation rows.")
+        features = [incident_text(row) for row in rows]
+        labels = [row["severity"] for row in rows]
         x_train, y_train, rows_train = features, labels, rows
+        x_test = [incident_text(row) for row in evaluation_rows]
+        y_test = [row["severity"] for row in evaluation_rows]
+        rows_test = evaluation_rows
+        evaluation_fingerprint = dataset_fingerprint(evaluation_rows)
     else:
         x_train, x_test, y_train, y_test, rows_train, rows_test = train_test_split(
             features,
@@ -130,6 +135,12 @@ def train_model(
         metrics = classification_metrics(y_test, predictions, SEVERITIES)
         baseline_metrics = majority_class_baseline(y_train, y_test, SEVERITIES)
         metrics["majority_class_baseline"] = baseline_metrics
+        metrics["train_rows"] = len(x_train)
+        metrics["evaluation_rows"] = len(x_test)
+        metrics["evaluation_mode"] = "fixed_reference" if evaluation_data_path is not None else "random_holdout"
+        if evaluation_data_path is not None:
+            metrics["evaluation_dataset_sha256"] = evaluation_fingerprint
+            metrics["training_rows_excluded_as_evaluation_overlap"] = excluded_overlap
 
         params = {
             "model_type": "TF-IDF + LogisticRegression",
@@ -142,6 +153,7 @@ def train_model(
             "random_state": random_state,
             "evaluation_mode": "fixed_reference" if evaluation_data_path is not None else "random_holdout",
             "evaluation_data": str(evaluation_data_path) if evaluation_data_path is not None else str(data_path),
+            "evaluation_rows_excluded_from_training": excluded_overlap,
         }
 
         mlflow.log_params(params)
@@ -238,7 +250,7 @@ def parse_args() -> argparse.Namespace:
         "--evaluation-data",
         type=Path,
         default=None,
-        help="Optional fixed reference dataset used only for candidate evaluation.",
+        help="Optional fixed evaluation dataset, used as-is (not split) to evaluate the candidate.",
     )
     return parser.parse_args()
 

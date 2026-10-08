@@ -17,6 +17,8 @@ REQUIRED_FILES = [
     "azure_ml/model.yml",
     "azure_ml/endpoints/managed-endpoint.yml",
     "azure_ml/endpoints/managed-deployment.yml",
+    "data/reference/candidate_evaluation.csv",
+    "data/reference/production_model_metrics.json",
     "infra/bicep/main.bicep",
     "infra/bicep/main.json",
     "requirements-runtime.txt",

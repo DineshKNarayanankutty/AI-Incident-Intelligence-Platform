@@ -74,6 +74,8 @@ jobs:
           echo "drift=$DRIFT" >> "$GITHUB_OUTPUT"
           echo "Drift detected: $DRIFT"
 
+      # Note: evaluation_data always comes from azure_ml/pipeline.yml (fixed clean
+      # data/reference/candidate_evaluation.csv). Only training_data is overridden.
       - name: Create temporary Azure ML data asset for demo retraining
         if: steps.gate.outputs.drift == 'true' && inputs.demo_drift == true
         shell: bash
@@ -104,88 +106,116 @@ jobs:
         env:
           DEMO_DRIFT: ${{ inputs.demo_drift }}
           DATA_ASSET_VERSION: ${{ github.run_id }}
-          DATA_PATH: ${{ steps.dataset.outputs.path }}
         run: |
+          set -euo pipefail
           az extension add --name ml --yes
+          # Only training_data may be overridden. evaluation_data always comes from
+          # azure_ml/pipeline.yml (committed clean data/reference/candidate_evaluation.csv).
+          SET_ARGS=()
           if [ "$DEMO_DRIFT" = "true" ]; then
             TRAINING_DATA="azureml:incident-severity-drift-demo:${DATA_ASSET_VERSION}"
             echo "Using demo Azure ML data asset: $TRAINING_DATA"
-            JOB_NAME=$(az ml job create \
-              --file azure_ml/pipeline.yml \
-              --set "jobs.train.inputs.training_data.path=$TRAINING_DATA" \
-              --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
-              --workspace-name "${{ vars.AZURE_ML_WORKSPACE }}" \
-              --query name -o tsv)
-          else
-            JOB_NAME=$(az ml job create \
-              --file azure_ml/pipeline.yml \
-              --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
-              --workspace-name "${{ vars.AZURE_ML_WORKSPACE }}" \
-              --query name -o tsv)
+            SET_ARGS=(--set "jobs.train.inputs.training_data.path=$TRAINING_DATA")
           fi
+          JOB_NAME=$(az ml job create \
+            --file azure_ml/pipeline.yml \
+            "${SET_ARGS[@]}" \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --workspace-name "${{ vars.AZURE_ML_WORKSPACE }}" \
+            --query name -o tsv)
+          test -n "$JOB_NAME"
           echo "job_name=$JOB_NAME" >> "$GITHUB_OUTPUT"
-          echo "Azure ML candidate training job: $JOB_NAME"
+          echo "Azure ML candidate training job (this run): $JOB_NAME"
 
-      - name: Stream Azure ML candidate training
-        if: steps.gate.outputs.drift == 'true'
+      - name: Stream Azure ML candidate training and require Completed
+        if: success() && steps.gate.outputs.drift == 'true'
+        shell: bash
         run: |
-          az ml job stream \
-            --name "${{ steps.submit.outputs.job_name }}" \
+          set -euo pipefail
+          JOB="${{ steps.submit.outputs.job_name }}"
+          az ml job stream --name "$JOB" \
             --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
             --workspace-name "${{ vars.AZURE_ML_WORKSPACE }}"
+          STATUS=$(az ml job show --name "$JOB" \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --workspace-name "${{ vars.AZURE_ML_WORKSPACE }}" --query status -o tsv)
+          echo "Job $JOB status: $STATUS"
+          test "$STATUS" = "Completed"
 
-      - name: Download candidate artifacts
-        if: steps.gate.outputs.drift == 'true'
+      - name: Download this run's candidate artifacts
+        if: success() && steps.gate.outputs.drift == 'true'
+        id: download
+        shell: bash
         run: |
-          mkdir -p outputs/candidate
+          set -euo pipefail
+          JOB="${{ steps.submit.outputs.job_name }}"
+          DEST="outputs/candidate/${JOB}"
+          rm -rf outputs/candidate
+          mkdir -p "$DEST"
           az ml job download \
-            --name "${{ steps.submit.outputs.job_name }}" \
+            --name "$JOB" \
             --output-name model_output \
-            --download-path outputs/candidate \
+            --download-path "$DEST" \
             --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
             --workspace-name "${{ vars.AZURE_ML_WORKSPACE }}"
-          find outputs/candidate -name metrics.json -print
+          echo "Downloaded files for job $JOB:"
+          find "$DEST" -type f | sort
+          COUNT=$(find "$DEST" -name metrics.json | wc -l)
+          if [ "$COUNT" -ne 1 ]; then
+            echo "::error::Expected exactly one metrics.json for job $JOB under $DEST, found $COUNT. The pipeline output model_output was not downloaded."
+            exit 1
+          fi
+          METRICS_PATH=$(find "$DEST" -name metrics.json)
+          test -f "$(dirname "$METRICS_PATH")/model.joblib"
+          echo "metrics_path=$METRICS_PATH" >> "$GITHUB_OUTPUT"
+          echo "Candidate metrics for job $JOB: $METRICS_PATH"
 
       - name: Evaluate candidate against production model
-        if: steps.gate.outputs.drift == 'true'
+        if: success() && steps.gate.outputs.drift == 'true'
         id: candidate_gate
-        continue-on-error: true
         shell: bash
         run: |
-          METRICS_PATH=$(find outputs/candidate -name metrics.json -print -quit)
-          test -n "$METRICS_PATH"
+          set -euo pipefail
           python -m scripts.evaluate_candidate \
-            --candidate-metrics "$METRICS_PATH" \
+            --candidate-metrics "${{ steps.download.outputs.metrics_path }}" \
             --production-metrics data/reference/production_model_metrics.json \
+            --evaluation-data data/reference/candidate_evaluation.csv \
             --output outputs/candidate/gate.json
 
-      - name: Show candidate quality gate result
-        if: steps.gate.outputs.drift == 'true'
+      - name: Show candidate gate result
+        if: always() && steps.gate.outputs.drift == 'true'
         shell: bash
         run: |
-          if [ -f outputs/candidate/gate.json ]; then
-            cat outputs/candidate/gate.json
-          else
-            echo "Candidate gate output was not created."
-          fi
+          if [ -f outputs/candidate/gate.json ]; then cat outputs/candidate/gate.json; else echo "gate.json was not created (see earlier step)."; fi
+
+      - name: Upload candidate gate result
+        if: always() && steps.gate.outputs.drift == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: candidate-gate-${{ github.run_id }}
+          path: outputs/candidate/
+          if-no-files-found: warn
 
       - name: Determine next Azure ML model version
-        if: steps.gate.outputs.drift == 'true' && steps.candidate_gate.outcome == 'success'
+        if: success() && steps.gate.outputs.drift == 'true'
         id: version
         shell: bash
         run: |
+          set -euo pipefail
           az ml model list \
             --name incident-severity \
             --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
             --workspace-name "${{ vars.AZURE_ML_WORKSPACE }}" \
-            -o json > outputs/candidate/models.json
-          VERSION=$(python -m scripts.next_model_version outputs/candidate/models.json)
+            -o json > outputs/models.json
+          VERSION=$(python -m scripts.next_model_version outputs/models.json)
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Candidate model version: $VERSION"
 
-      - name: Register candidate model
-        if: steps.gate.outputs.drift == 'true' && steps.candidate_gate.outcome == 'success'
+      - name: Register candidate model from this job's output
+        if: success() && steps.gate.outputs.drift == 'true'
+        shell: bash
         run: |
+          set -euo pipefail
           az ml model create \
             --name incident-severity \
             --version "${{ steps.version.outputs.version }}" \
@@ -196,7 +226,7 @@ jobs:
             --workspace-name "${{ vars.AZURE_ML_WORKSPACE }}"
 
       - name: Write promotion manifest
-        if: steps.gate.outputs.drift == 'true' && steps.candidate_gate.outcome == 'success'
+        if: success() && steps.gate.outputs.drift == 'true'
         shell: bash
         run: |
           python - <<'PY'
@@ -207,8 +237,13 @@ jobs:
           manifest = {
               "model_name": "incident-severity",
               "model_version": int("${{ steps.version.outputs.version }}"),
+              "candidate_model_version": int("${{ steps.version.outputs.version }}"),
               "training_job_name": "${{ steps.submit.outputs.job_name }}",
+              "candidate_metrics_path": "${{ steps.download.outputs.metrics_path }}",
               "gate_passed": bool(gate["passed"]),
+              "gate_checks": gate["checks"],
+              "gate_thresholds": gate["thresholds"],
+              "gate_delta": gate["delta"],
               "candidate": gate["candidate"],
               "production": gate["production"],
               "next_workflow": "Azure ML Blue-Green Deployment",
@@ -219,9 +254,10 @@ jobs:
               encoding="utf-8",
           )
           print(json.dumps(manifest, indent=2, sort_keys=True))
+          PY
 
       - name: Upload candidate promotion artifact
-        if: steps.gate.outputs.drift == 'true' && steps.candidate_gate.outcome == 'success'
+        if: success() && steps.gate.outputs.drift == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: incident-severity-candidate-${{ steps.version.outputs.version }}
@@ -231,9 +267,3 @@ jobs:
       - name: Report no-drift result
         if: steps.gate.outputs.drift != 'true'
         run: echo "No drift threshold exceeded; no retraining job submitted."
-
-      - name: Report candidate rejected
-        if: steps.gate.outputs.drift == 'true' && steps.candidate_gate.outcome != 'success'
-        run: |
-          echo "Candidate model failed the quality gate. Production model remains unchanged."
-          exit 1

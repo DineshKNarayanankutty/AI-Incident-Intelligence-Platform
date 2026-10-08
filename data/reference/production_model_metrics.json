@@ -1,7 +1,12 @@
 {
-  "model_name": "incident-severity",
-  "model_version": "1",
   "accuracy": 0.8,
-  "macro_f1": 0.809,
-  "evaluation_protocol": "fixed reference dataset data/synthetic_incidents.csv; stratified 25% holdout; random_state=42"
+  "baseline_source": "reproduced locally: production pipeline configuration fitted on the complementary 75% split",
+  "evaluation_dataset": "data/reference/candidate_evaluation.csv",
+  "evaluation_dataset_sha256": "32c7d3e820ea87ef8999e3ab307fe1ce55f84c2674347693eeba484dac19e7fc",
+  "evaluation_random_state": 42,
+  "evaluation_rows": 100,
+  "evaluation_test_size": 0.25,
+  "macro_f1": 0.8090252805927863,
+  "model_name": "incident-severity",
+  "model_version": "1"
 }

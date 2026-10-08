@@ -18,9 +18,10 @@ jobs:
       training_data:
         type: uri_file
         path: azureml:incident-severity-data:1
+      # Fixed clean evaluation set (committed). Never overridden by workflows.
       evaluation_data:
         type: uri_file
-        path: azureml:incident-severity-data:1
+        path: ../data/reference/candidate_evaluation.csv
 
     outputs:
       model_output:
