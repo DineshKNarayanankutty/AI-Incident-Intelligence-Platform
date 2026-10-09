@@ -92,18 +92,22 @@ jobs:
 
           echo "Rollback completed: ${ROLLBACK_TO} now receives 100% traffic."
 
-      - name: Sync scoring URI to FastAPI
+      - name: Sync live ML serving settings to FastAPI
         shell: bash
         run: |
-          SCORING_URI=$(az ml online-endpoint show \
-            --name "${{ vars.AZURE_ML_ENDPOINT_NAME || 'incident-severity-endpoint' }}" \
+          set -euo pipefail
+          # Re-read the live endpoint so the API metadata (scoring URI, active
+          # deployment, model version) always matches what is actually serving.
+          python -m scripts.ml_serving_config resolve-ml \
+            --endpoint "${{ vars.AZURE_ML_ENDPOINT_NAME || 'incident-severity-endpoint' }}" \
             --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
-            --workspace-name "${{ vars.AZURE_ML_WORKSPACE }}" \
-            --query scoring_uri -o tsv)
+            --workspace "${{ vars.AZURE_ML_WORKSPACE }}" | tee /tmp/ml_settings.env
+          mapfile -t SETTINGS < /tmp/ml_settings.env
           az webapp config appsettings set \
             --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
             --name "${{ vars.AZURE_API_APP_NAME }}" \
-            --settings AZURE_ML_SCORING_URI="$SCORING_URI"
+            --settings "${SETTINGS[@]}" \
+            --output none
 
       - name: Rollback summary
         shell: bash

@@ -7,6 +7,32 @@ param location string = resourceGroup().location
 @minLength(3)
 param namePrefix string = 'aiincident'
 
+@description('Scoring URI of the existing Azure ML online endpoint. Resolved from the live endpoint by scripts/ml_serving_config.py; must not be empty.')
+@minLength(1)
+param azureMlScoringUri string
+
+@description('Azure ML deployment slot currently receiving production traffic.')
+@allowed([
+  'blue'
+  'green'
+])
+param azureMlDeploymentName string
+
+@description('Azure ML model version currently receiving production traffic. Resolved from the live active deployment; must not be empty.')
+@minLength(1)
+param azureMlModelVersion string
+
+@description('Foundry agent name currently configured on the App Service. Siteconfig appSettings replaces the whole collection, so the live value must be passed through, never blanked.')
+@minLength(1)
+param foundryAgentName string
+
+@description('Foundry agent version currently configured on the App Service (may be empty only if it is empty live).')
+param foundryAgentVersion string
+
+@description('Foundry model deployment name currently configured on the App Service.')
+@minLength(1)
+param foundryModelDeploymentName string
+
 @description('App Service plan SKU for the FastAPI host. S1 Standard is the stable development/demo default.')
 @allowed([
   'F1'
@@ -15,7 +41,7 @@ param namePrefix string = 'aiincident'
 ])
 param apiPlanSku string = 'S1'
 
-@description('Optional Microsoft Entra object ID for the GitHub Actions service principal. When supplied, grants read-only access to production incident blobs.')
+@description('Optional Microsoft Entra object ID for the GitHub Actions service principal. When supplied, grants read/write access to production incident blobs.')
 param githubActionsPrincipalObjectId string = ''
 
 @description('Tags applied to resources.')
@@ -233,7 +259,7 @@ resource apiApp 'Microsoft.Web/sites@2024-11-01' = {
         }
         {
           name: 'AZURE_ML_DEPLOYMENT_NAME'
-          value: 'blue'
+          value: azureMlDeploymentName
         }
         {
           name: 'AZURE_ML_MODEL_NAME'
@@ -241,11 +267,11 @@ resource apiApp 'Microsoft.Web/sites@2024-11-01' = {
         }
         {
           name: 'AZURE_ML_MODEL_VERSION'
-          value: '1'
+          value: azureMlModelVersion
         }
         {
           name: 'AZURE_ML_SCORING_URI'
-          value: ''
+          value: azureMlScoringUri
         }
         {
           name: 'AZURE_AI_PROJECT_ENDPOINT'
@@ -253,15 +279,15 @@ resource apiApp 'Microsoft.Web/sites@2024-11-01' = {
         }
         {
           name: 'FOUNDRY_AGENT_NAME'
-          value: ''
+          value: foundryAgentName
         }
         {
           name: 'FOUNDRY_AGENT_VERSION'
-          value: ''
+          value: foundryAgentVersion
         }
         {
           name: 'AZURE_AI_MODEL_DEPLOYMENT_NAME'
-          value: ''
+          value: foundryModelDeploymentName
         }
         {
           name: 'AZURE_STORAGE_ACCOUNT_NAME'
@@ -389,8 +415,17 @@ resource apiMlInvokerAssignment 'Microsoft.Authorization/roleAssignments@2022-04
   properties: {
     principalId: apiApp.identity.principalId
     principalType: 'ServicePrincipal'
-    roleDefinitionId: mlEndpointInvokerRole.id
+    // Canonical subscription-scoped role definition ID. `mlEndpointInvokerRole.id`
+    // evaluates to a resource-group-scoped path, which differs from the stored
+    // assignment and shows up as a roleDefinitionId change in What-If.
+    roleDefinitionId: subscriptionResourceId(
+      'Microsoft.Authorization/roleDefinitions',
+      guid(resourceGroup().id, 'aiincident-ml-endpoint-invoker')
+    )
   }
+  dependsOn: [
+    mlEndpointInvokerRole
+  ]
 }
 
 // -----------------------------------------------------------------------------

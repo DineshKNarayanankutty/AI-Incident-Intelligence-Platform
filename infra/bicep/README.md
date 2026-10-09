@@ -15,7 +15,7 @@ Resources:
 - Least-privilege RBAC for FastAPI to invoke Azure ML online endpoints
 - Foundry Agent Consumer RBAC for FastAPI at project scope
 
-The App Service uses Python 3.11 and starts FastAPI with Uvicorn. Azure ML scoring URI and Foundry agent settings are lifecycle configuration populated by the deployment workflows after the corresponding Azure artifacts exist. Bicep owns the infrastructure and stable settings; artifact-specific values are synchronized after deployment.
+The App Service uses Python 3.11 and starts FastAPI with Uvicorn. Azure ML serving settings (scoring URI, active deployment, model version) and the Foundry agent settings are lifecycle values. Bicep takes them as required, non-empty parameters supplied through environment variables read by `main.bicepparam`; `scripts/ml_serving_config.py` resolves them read-only from the live endpoint and live App Service, so a missing variable fails preflight instead of deploying a blank or stale value. The blue/green and rollback workflows re-sync the three ML settings after traffic changes. Note that `siteConfig.appSettings` replaces the App Service's whole settings collection on deployment: for an existing environment prefer those narrow `az webapp config appsettings set` syncs over a full template deployment, and run `check-app-settings --strict` before any full deployment.
 
 No secrets are stored in Bicep. Authentication is via managed identity.
 

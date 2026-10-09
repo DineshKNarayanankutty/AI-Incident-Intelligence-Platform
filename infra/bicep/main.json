@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.48.1.52935",
-      "templateHash": "10080934537330465408"
+      "templateHash": "5742855150172040190"
     }
   },
   "parameters": {
@@ -24,6 +24,50 @@
         "description": "Short prefix used in resource names."
       }
     },
+    "azureMlScoringUri": {
+      "type": "string",
+      "minLength": 1,
+      "metadata": {
+        "description": "Scoring URI of the existing Azure ML online endpoint. Resolved from the live endpoint by scripts/ml_serving_config.py; must not be empty."
+      }
+    },
+    "azureMlDeploymentName": {
+      "type": "string",
+      "allowedValues": [
+        "blue",
+        "green"
+      ],
+      "metadata": {
+        "description": "Azure ML deployment slot currently receiving production traffic."
+      }
+    },
+    "azureMlModelVersion": {
+      "type": "string",
+      "minLength": 1,
+      "metadata": {
+        "description": "Azure ML model version currently receiving production traffic. Resolved from the live active deployment; must not be empty."
+      }
+    },
+    "foundryAgentName": {
+      "type": "string",
+      "minLength": 1,
+      "metadata": {
+        "description": "Foundry agent name currently configured on the App Service. Siteconfig appSettings replaces the whole collection, so the live value must be passed through, never blanked."
+      }
+    },
+    "foundryAgentVersion": {
+      "type": "string",
+      "metadata": {
+        "description": "Foundry agent version currently configured on the App Service (may be empty only if it is empty live)."
+      }
+    },
+    "foundryModelDeploymentName": {
+      "type": "string",
+      "minLength": 1,
+      "metadata": {
+        "description": "Foundry model deployment name currently configured on the App Service."
+      }
+    },
     "apiPlanSku": {
       "type": "string",
       "defaultValue": "S1",
@@ -40,7 +84,7 @@
       "type": "string",
       "defaultValue": "",
       "metadata": {
-        "description": "Optional Microsoft Entra object ID for the GitHub Actions service principal. When supplied, grants read-only access to production incident blobs."
+        "description": "Optional Microsoft Entra object ID for the GitHub Actions service principal. When supplied, grants read/write access to production incident blobs."
       }
     },
     "tags": {
@@ -289,7 +333,7 @@
             },
             {
               "name": "AZURE_ML_DEPLOYMENT_NAME",
-              "value": "blue"
+              "value": "[parameters('azureMlDeploymentName')]"
             },
             {
               "name": "AZURE_ML_MODEL_NAME",
@@ -297,11 +341,11 @@
             },
             {
               "name": "AZURE_ML_MODEL_VERSION",
-              "value": "1"
+              "value": "[parameters('azureMlModelVersion')]"
             },
             {
               "name": "AZURE_ML_SCORING_URI",
-              "value": ""
+              "value": "[parameters('azureMlScoringUri')]"
             },
             {
               "name": "AZURE_AI_PROJECT_ENDPOINT",
@@ -309,15 +353,15 @@
             },
             {
               "name": "FOUNDRY_AGENT_NAME",
-              "value": ""
+              "value": "[parameters('foundryAgentName')]"
             },
             {
               "name": "FOUNDRY_AGENT_VERSION",
-              "value": ""
+              "value": "[parameters('foundryAgentVersion')]"
             },
             {
               "name": "AZURE_AI_MODEL_DEPLOYMENT_NAME",
-              "value": ""
+              "value": "[parameters('foundryModelDeploymentName')]"
             },
             {
               "name": "AZURE_STORAGE_ACCOUNT_NAME",
@@ -447,7 +491,7 @@
       "properties": {
         "principalId": "[reference(resourceId('Microsoft.Web/sites', variables('apiAppName')), '2024-11-01', 'full').identity.principalId]",
         "principalType": "ServicePrincipal",
-        "roleDefinitionId": "[resourceId('Microsoft.Authorization/roleDefinitions', guid(resourceGroup().id, 'aiincident-ml-endpoint-invoker'))]"
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', guid(resourceGroup().id, 'aiincident-ml-endpoint-invoker'))]"
       },
       "dependsOn": [
         "[resourceId('Microsoft.Web/sites', variables('apiAppName'))]",

@@ -27,12 +27,34 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Build Bicep
-        run: az bicep build --file infra/bicep/main.bicep --stdout > /tmp/main.json
-      - name: Resource-group what-if
+      - name: Resolve serving configuration from live Azure (read-only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m scripts.ml_serving_config resolve-ml \
+            --endpoint "${{ vars.AZURE_ML_ENDPOINT_NAME || 'incident-severity-endpoint' }}" \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --workspace "${{ vars.AZURE_ML_WORKSPACE }}" >> "$GITHUB_ENV"
+          python -m scripts.ml_serving_config resolve-foundry \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --app "${{ vars.AZURE_API_APP_NAME }}" >> "$GITHUB_ENV"
+      - name: Preflight - required parameters are present and valid
+        run: python -m scripts.ml_serving_config check-env
+      - name: Build Bicep and parameters
+        run: |
+          az bicep build --file infra/bicep/main.bicep --stdout > /tmp/main.json
+          az bicep build-params --file infra/bicep/main.bicepparam --stdout > /dev/null
+      - name: Preflight - live app settings that a full deployment would remove
+        run: |
+          python -m scripts.ml_serving_config check-app-settings \
+            --template /tmp/main.json \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --app "${{ vars.AZURE_API_APP_NAME }}"
+      - name: Resource-group what-if (read-only)
         run: |
           az deployment group what-if \
             --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
-            --template-file infra/bicep/main.bicep \
             --parameters infra/bicep/main.bicepparam
-      # Actual infrastructure creation remains an explicit local/manual action.
+      # Actual infrastructure deployment remains an explicit local/manual action.
+      # For an existing environment prefer the narrow settings sync performed by
+      # the blue/green and rollback workflows over a full template deployment.
