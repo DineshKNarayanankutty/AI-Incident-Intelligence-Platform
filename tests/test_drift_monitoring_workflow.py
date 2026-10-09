@@ -25,7 +25,7 @@ def test_production_drift_monitoring_workflow_contract() -> None:
     assert "production/snapshots/current/incidents.csv" in text
     assert "production-drift-report-${{ github.run_id }}" in text
     assert "gh workflow run retraining.yml" in text
-    assert '-f training_data_blob="production/training/current/incidents.csv"' in text
+    assert '-f training_data_blob="training/current/incidents.csv"' in text
     assert "actions: write" in text
     assert "id-token: write" in text
 
