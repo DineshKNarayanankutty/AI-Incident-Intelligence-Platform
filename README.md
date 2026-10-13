@@ -1,5 +1,9 @@
 # AI Incident Intelligence Platform: Complete Beginner's Guide
 [![CI](https://github.com/DineshKNarayanankutty/AI-Incident-Intelligence-Platform/actions/workflows/ci.yml/badge.svg)](https://github.com/DineshKNarayanankutty/AI-Incident-Intelligence-Platform/actions/workflows/ci.yml)
+[![Azure ML Blue-Green Deployment](https://github.com/DineshKNarayanankutty/AI-Incident-Intelligence-Platform/actions/workflows/deployment.yml/badge.svg)](https://github.com/DineshKNarayanankutty/AI-Incident-Intelligence-Platform/actions/workflows/deployment.yml)
+[![Azure ML Rollback](https://github.com/DineshKNarayanankutty/AI-Incident-Intelligence-Platform/actions/workflows/rollback.yml/badge.svg)](https://github.com/DineshKNarayanankutty/AI-Incident-Intelligence-Platform/actions/workflows/rollback.yml)
+[![Drift Retraining](https://github.com/DineshKNarayanankutty/AI-Incident-Intelligence-Platform/actions/workflows/retraining.yml/badge.svg)](https://github.com/DineshKNarayanankutty/AI-Incident-Intelligence-Platform/actions/workflows/retraining.yml)
+[![FastAPI Deployment](https://github.com/DineshKNarayanankutty/AI-Incident-Intelligence-Platform/actions/workflows/api-deployment.yml/badge.svg)](https://github.com/DineshKNarayanankutty/AI-Incident-Intelligence-Platform/actions/workflows/api-deployment.yml)
 
 This guide takes you from **an empty computer** to **a working project**, one small step at a time. You do not need to understand the code. You only need to copy the commands exactly and check that you see what the guide says you should see.
 
