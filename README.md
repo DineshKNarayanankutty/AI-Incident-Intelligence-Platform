@@ -1,4 +1,5 @@
 # AI Incident Intelligence Platform: Complete Beginner's Guide
+[![CI](https://github.com/DineshKNarayanankutty/AI-Incident-Intelligence-Platform/actions/workflows/ci.yml/badge.svg)](https://github.com/DineshKNarayanankutty/AI-Incident-Intelligence-Platform/actions/workflows/ci.yml)
 
 This guide takes you from **an empty computer** to **a working project**, one small step at a time. You do not need to understand the code. You only need to copy the commands exactly and check that you see what the guide says you should see.
 
